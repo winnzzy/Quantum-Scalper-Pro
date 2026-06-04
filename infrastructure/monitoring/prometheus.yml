@@ -1,0 +1,31 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: []
+
+rule_files:
+  - "rules/*.yml"
+
+scrape_configs:
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  - job_name: 'qsp-backend'
+    static_configs:
+      - targets: ['qsp-backend:8000']
+    metrics_path: '/metrics'
+    scrape_interval: 5s
+
+  - job_name: 'qsp-frontend'
+    static_configs:
+      - targets: ['qsp-frontend:3000']
+    scrape_interval: 30s
+
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['node-exporter:9100']
