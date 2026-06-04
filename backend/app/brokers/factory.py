@@ -20,7 +20,11 @@ class BrokerFactory:
         if cache_key in cls._brokers:
             broker = cls._brokers[cache_key]
             if broker.is_connected:
-                return broker
+                healthy = await broker.health_check()
+                if healthy:
+                    return broker
+                logger.warning(f"Broker instance unhealthy, reconnecting: {cache_key}")
+            await broker.disconnect()
 
         config = cls._create_config(broker_type)
 

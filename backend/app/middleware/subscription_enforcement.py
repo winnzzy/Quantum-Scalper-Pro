@@ -255,31 +255,42 @@ class PlanRateLimiter:
         user_id: int,
         plan_tier: str = "free",
     ) -> bool:
-        """Check if user is within rate limits. Returns True if allowed."""
+        """Check if user is within rate limits. Returns True if allowed.
+        
+        Gracefully degrades: if Redis is unavailable, allows the request
+        (fail-open for availability).
+        """
         limits = self.RATE_LIMITS.get(plan_tier, self.RATE_LIMITS["free"])
 
-        # Check per-minute limit
         minute_key = f"rate_limit:{user_id}:minute"
-        minute_count = await redis_client.get(minute_key)
-        if minute_count and int(minute_count) >= limits["requests_per_minute"]:
-            return False
-
-        # Increment counters
-        pipe = redis_client._client.pipeline()
-        pipe.incr(minute_key)
-        pipe.expire(minute_key, 60)
-
-        # Check per-hour limit
         hour_key = f"rate_limit:{user_id}:hour"
-        hour_count = await redis_client.get(hour_key)
-        if hour_count and int(hour_count) >= limits["requests_per_hour"]:
-            return False
 
-        pipe.incr(hour_key)
-        pipe.expire(hour_key, 3600)
-        await pipe.execute()
+        try:
+            # Check per-minute limit
+            minute_count = await redis_client.get(minute_key)
+            if minute_count is not None and int(minute_count) >= limits["requests_per_minute"]:
+                return False
 
-        return True
+            # Check per-hour limit
+            hour_count = await redis_client.get(hour_key)
+            if hour_count is not None and int(hour_count) >= limits["requests_per_hour"]:
+                return False
+
+            # Increment both counters using pipeline
+            await redis_client.pipeline_execute([
+                ("incr", {"name": minute_key}),
+                ("expire", {"name": minute_key, "time": 60}),
+                ("incr", {"name": hour_key}),
+                ("expire", {"name": hour_key, "time": 3600}),
+            ])
+
+            return True
+
+        except Exception as e:
+            # Fail-open: if Redis is down, allow requests to maintain availability
+            from app.core.logging import logger
+            logger.warning(f"Rate limit check failed for user {user_id}, allowing request: {e}")
+            return True
 
 
 plan_rate_limiter = PlanRateLimiter()

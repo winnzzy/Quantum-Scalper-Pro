@@ -117,6 +117,21 @@ class BaseBroker(ABC):
         self.is_connected = False
         self.last_error: Optional[str] = None
 
+    async def reconnect(self) -> bool:
+        """Reconnect to the broker after a disconnect."""
+        try:
+            await self.disconnect()
+        except Exception:
+            pass
+        self.is_connected = False
+        return await self.connect()
+
+    async def ensure_connection(self) -> bool:
+        """Ensure the broker is connected before performing broker operations."""
+        if self.is_connected:
+            return True
+        return await self.connect()
+
     @abstractmethod
     async def connect(self) -> bool:
         """Connect to broker."""

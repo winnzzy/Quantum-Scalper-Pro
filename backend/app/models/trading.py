@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import (
     Boolean, Column, DateTime, Enum, ForeignKey, Integer, 
-    String, Text, Float, JSON, Numeric, Index, BigInteger
+    String, Text, Float, JSON, Numeric, Index, BigInteger, UniqueConstraint
 )
 from sqlalchemy.orm import relationship
 
@@ -47,6 +47,7 @@ class Trade(Base):
         Index("idx_trade_symbol", "symbol"),
         Index("idx_trade_opened", "opened_at"),
         Index("idx_trade_strategy", "strategy_name"),
+        UniqueConstraint("broker", "broker_order_id", name="uq_trade_broker_order"),
     )
 
     id = Column(Integer, primary_key=True, index=True)

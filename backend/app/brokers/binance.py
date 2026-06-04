@@ -22,6 +22,26 @@ class BinanceBroker(BaseBroker):
         self.market_type = "future" if not config.testnet else "spot"
         self._is_futures = config.testnet is False  # Futures for live
 
+    async def _exchange_ready(self) -> bool:
+        if self.exchange is None or not self.is_connected:
+            return await self.connect()
+        return True
+
+    async def _retryable(self, fn, *args, **kwargs):
+        for attempt in range(2):
+            if not await self._exchange_ready():
+                break
+            try:
+                return await fn(*args, **kwargs)
+            except (ccxt.RequestTimeout, ccxt.NetworkError, ccxt.ExchangeError) as e:
+                self.last_error = str(e)
+                self.is_connected = False
+                logger.warning(f"Binance API transient error on attempt {attempt + 1}: {e}")
+                if attempt == 0:
+                    await self.connect()
+                    continue
+                raise
+
     async def connect(self) -> bool:
         """Connect to Binance."""
         try:
@@ -61,22 +81,26 @@ class BinanceBroker(BaseBroker):
 
     async def get_account_info(self) -> AccountInfo:
         """Get account info."""
-        if not self.exchange:
-            raise RuntimeError("Not connected")
+        async def _get_account_info():
+            return await self.exchange.fetch_balance()
 
-        balance = await self.exchange.fetch_balance()
-        total = Decimal(str(balance.get("total", {}).get("USDT", 0)))
-        free = Decimal(str(balance.get("free", {}).get("USDT", 0)))
-        used = Decimal(str(balance.get("used", {}).get("USDT", 0)))
+        try:
+            balance = await self._retryable(_get_account_info)
+            total = Decimal(str(balance.get("total", {}).get("USDT", 0)))
+            free = Decimal(str(balance.get("free", {}).get("USDT", 0)))
+            used = Decimal(str(balance.get("used", {}).get("USDT", 0)))
 
-        return AccountInfo(
-            balance=total,
-            equity=total,
-            margin_used=used,
-            margin_free=free,
-            currency="USDT",
-            timestamp=datetime.now(timezone.utc)
-        )
+            return AccountInfo(
+                balance=total,
+                equity=total,
+                margin_used=used,
+                margin_free=free,
+                currency="USDT",
+                timestamp=datetime.now(timezone.utc)
+            )
+        except Exception as e:
+            logger.error(f"Get account info failed: {e}")
+            raise
 
     async def place_order(
         self,
@@ -90,10 +114,8 @@ class BinanceBroker(BaseBroker):
         **kwargs
     ) -> OrderResult:
         """Place order on Binance."""
-        if not self.exchange:
-            return OrderResult(success=False, error_message="Not connected")
 
-        try:
+        async def _place():
             ccxt_side = "buy" if side == OrderSide.BUY else "sell"
             ccxt_type = order_type.value
 
@@ -102,8 +124,6 @@ class BinanceBroker(BaseBroker):
 
             # Get market precision
             market = self.exchange.market(formatted_symbol)
-            amount_precision = market["precision"]["amount"]
-            price_precision = market["precision"]["price"]
 
             # Format quantity and price
             formatted_qty = float(self.exchange.amount_to_precision(formatted_symbol, float(quantity)))
@@ -118,7 +138,7 @@ class BinanceBroker(BaseBroker):
             # Merge any extra params
             params.update(kwargs)
 
-            order = await self.exchange.create_order(
+            return await self.exchange.create_order(
                 formatted_symbol,
                 ccxt_type,
                 ccxt_side,
@@ -127,10 +147,15 @@ class BinanceBroker(BaseBroker):
                 params
             )
 
+        try:
+            order = await self._retryable(_place)
+            if not order:
+                return OrderResult(success=False, error_message="Binance order failed to execute")
+
             return OrderResult(
                 success=True,
                 order_id=str(order.get("id", "")),
-                symbol=formatted_symbol,
+                symbol=self.format_symbol(symbol),
                 side=side,
                 order_type=order_type,
                 quantity=quantity,
@@ -149,21 +174,25 @@ class BinanceBroker(BaseBroker):
 
     async def cancel_order(self, order_id: str, symbol: Optional[str] = None) -> bool:
         """Cancel order."""
-        if not self.exchange:
-            return False
-        try:
+        async def _cancel():
             await self.exchange.cancel_order(order_id, self.format_symbol(symbol) if symbol else None)
             return True
+
+        try:
+            return await self._retryable(_cancel)
         except Exception as e:
             logger.error(f"Cancel order failed: {e}")
             return False
 
     async def get_order(self, order_id: str, symbol: Optional[str] = None) -> Optional[OrderResult]:
         """Get order details."""
-        if not self.exchange:
-            return None
+        async def _get_order():
+            return await self.exchange.fetch_order(order_id, self.format_symbol(symbol) if symbol else None)
+
         try:
-            order = await self.exchange.fetch_order(order_id, self.format_symbol(symbol) if symbol else None)
+            order = await self._retryable(_get_order)
+            if order is None:
+                return None
             return self._parse_order(order)
         except Exception as e:
             logger.error(f"Get order failed: {e}")
@@ -171,26 +200,28 @@ class BinanceBroker(BaseBroker):
 
     async def get_open_orders(self, symbol: Optional[str] = None) -> List[OrderResult]:
         """Get open orders."""
-        if not self.exchange:
-            return []
+        async def _get_open_orders():
+            return await self.exchange.fetch_open_orders(self.format_symbol(symbol) if symbol else None)
+
         try:
-            orders = await self.exchange.fetch_open_orders(self.format_symbol(symbol) if symbol else None)
-            return [self._parse_order(o) for o in orders]
+            orders = await self._retryable(_get_open_orders)
+            return [self._parse_order(o) for o in orders] if orders else []
         except Exception as e:
             logger.error(f"Get open orders failed: {e}")
             return []
 
     async def get_positions(self, symbol: Optional[str] = None) -> List[PositionInfo]:
         """Get positions."""
-        if not self.exchange:
-            return []
-        try:
+        async def _get_positions():
             if self._is_futures:
-                positions = await self.exchange.fetch_positions([self.format_symbol(symbol)] if symbol else None)
-                return [self._parse_position(p) for p in positions if float(p.get("contracts", 0)) != 0]
-            else:
-                # Spot doesn't have positions, return empty
+                return await self.exchange.fetch_positions([self.format_symbol(symbol)] if symbol else None)
+            return []
+
+        try:
+            positions = await self._retryable(_get_positions)
+            if not positions:
                 return []
+            return [self._parse_position(p) for p in positions if float(p.get("contracts", 0)) != 0]
         except Exception as e:
             logger.error(f"Get positions failed: {e}")
             return []
@@ -219,22 +250,29 @@ class BinanceBroker(BaseBroker):
 
     async def get_market_data(self, symbol: str) -> MarketData:
         """Get market data."""
-        if not self.exchange:
-            raise RuntimeError("Not connected")
+        async def _get_ticker():
+            return await self.exchange.fetch_ticker(self.format_symbol(symbol))
 
-        ticker = await self.exchange.fetch_ticker(self.format_symbol(symbol))
-        return MarketData(
-            symbol=symbol,
-            bid=Decimal(str(ticker.get("bid", 0))),
-            ask=Decimal(str(ticker.get("ask", 0))),
-            last=Decimal(str(ticker.get("last", 0))),
-            volume_24h=Decimal(str(ticker.get("quoteVolume", 0))),
-            high_24h=Decimal(str(ticker.get("high", 0))),
-            low_24h=Decimal(str(ticker.get("low", 0))),
-            change_24h=Decimal(str(ticker.get("change", 0))),
-            change_percent_24h=Decimal(str(ticker.get("percentage", 0))),
-            timestamp=datetime.now(timezone.utc)
-        )
+        try:
+            ticker = await self._retryable(_get_ticker)
+            if not ticker:
+                raise RuntimeError("Failed to fetch ticker")
+
+            return MarketData(
+                symbol=symbol,
+                bid=Decimal(str(ticker.get("bid", 0))),
+                ask=Decimal(str(ticker.get("ask", 0))),
+                last=Decimal(str(ticker.get("last", 0))),
+                volume_24h=Decimal(str(ticker.get("quoteVolume", 0))),
+                high_24h=Decimal(str(ticker.get("high", 0))),
+                low_24h=Decimal(str(ticker.get("low", 0))),
+                change_24h=Decimal(str(ticker.get("change", 0))),
+                change_percent_24h=Decimal(str(ticker.get("percentage", 0))),
+                timestamp=datetime.now(timezone.utc)
+            )
+        except Exception as e:
+            logger.error(f"Get market data failed: {e}")
+            raise
 
     async def get_ohlcv(
         self,
@@ -244,25 +282,27 @@ class BinanceBroker(BaseBroker):
         since: Optional[int] = None
     ) -> List[List[Any]]:
         """Get OHLCV data."""
-        if not self.exchange:
-            return []
-        try:
+        async def _get_ohlcv():
             return await self.exchange.fetch_ohlcv(
                 self.format_symbol(symbol),
                 timeframe,
                 since=since,
                 limit=limit
             )
+
+        try:
+            return await self._retryable(_get_ohlcv)
         except Exception as e:
             logger.error(f"Get OHLCV failed: {e}")
             return []
 
     async def get_balance(self, currency: Optional[str] = None) -> Decimal:
         """Get balance."""
-        if not self.exchange:
-            return Decimal("0")
+        async def _get_balance():
+            return await self.exchange.fetch_balance()
+
         try:
-            balance = await self.exchange.fetch_balance()
+            balance = await self._retryable(_get_balance)
             curr = currency or "USDT"
             return Decimal(str(balance.get("total", {}).get(curr, 0)))
         except Exception as e:
