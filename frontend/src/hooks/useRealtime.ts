@@ -22,9 +22,7 @@ export const useRealtime = () => {
     const connect = () => {
       if (disposed || !token) return;
 
-      const url = new URL(WS_URL);
-      url.searchParams.set('token', token);
-      const ws = new WebSocket(url.toString());
+      const ws = new WebSocket(WS_URL, [`bearer.${token}`]);
       socket.current = ws;
 
       ws.onopen = () => {
