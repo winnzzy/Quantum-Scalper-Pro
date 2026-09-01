@@ -151,7 +151,7 @@ class CustomerSubscription(Base):
     currency = Column(String(3), default="USD")
 
     # Metadata
-    metadata = Column(JSON, default=dict)
+    metadata_json = Column("metadata", JSON, default=dict)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
@@ -197,7 +197,7 @@ class Payment(Base):
     refund_reason = Column(Text, nullable=True)
 
     # Metadata
-    metadata = Column(JSON, default=dict)
+    metadata_json = Column("metadata", JSON, default=dict)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
@@ -240,7 +240,7 @@ class Device(Base):
     deactivated_at = Column(DateTime, nullable=True)
 
     # Metadata
-    metadata = Column(JSON, default=dict)
+    metadata_json = Column("metadata", JSON, default=dict)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
@@ -278,7 +278,7 @@ class LicenseActivation(Base):
     heartbeat_count = Column(Integer, default=0)
 
     # Metadata
-    metadata = Column(JSON, default=dict)
+    metadata_json = Column("metadata", JSON, default=dict)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
