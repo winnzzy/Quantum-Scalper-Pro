@@ -87,3 +87,62 @@ async def test_breakout_uses_prior_resistance():
 
     assert result is not None
     assert result.signal.type == SignalType.BUY
+
+
+def test_stop_loss_gap_exits_at_open():
+    engine = BacktestingEngine()
+    position = BacktestPosition(
+        symbol="BTC/USDT",
+        side="buy",
+        entry_price=Decimal("100"),
+        entry_reference_price=Decimal("100"),
+        quantity=Decimal("1"),
+        stop_loss=Decimal("95"),
+        take_profit=Decimal("110"),
+    )
+
+    trade = engine._check_sl_tp(
+        position=position,
+        candle_open=Decimal("90"),
+        candle_high=Decimal("92"),
+        candle_low=Decimal("89"),
+        spread=Decimal("0"),
+        commission_rate=Decimal("0"),
+        slippage_rate=Decimal("0"),
+        candle_time=datetime.now(timezone.utc),
+        symbol="BTC/USDT",
+    )
+
+    assert trade is not None
+    assert trade.exit_reason == "stop_loss_gap"
+    assert trade.exit_price == Decimal("90.00000000")
+
+
+def test_ambiguous_intrabar_exit_uses_stop_loss():
+    engine = BacktestingEngine()
+    position = BacktestPosition(
+        symbol="BTC/USDT",
+        side="buy",
+        entry_price=Decimal("100"),
+        entry_reference_price=Decimal("100"),
+        quantity=Decimal("1"),
+        stop_loss=Decimal("95"),
+        take_profit=Decimal("105"),
+    )
+
+    trade = engine._check_sl_tp(
+        position=position,
+        candle_open=Decimal("100"),
+        candle_high=Decimal("106"),
+        candle_low=Decimal("94"),
+        spread=Decimal("0"),
+        commission_rate=Decimal("0"),
+        slippage_rate=Decimal("0"),
+        candle_time=datetime.now(timezone.utc),
+        symbol="BTC/USDT",
+    )
+
+    assert trade is not None
+    assert trade.exit_reason == "ambiguous_stop_loss"
+    assert trade.exit_price == Decimal("95.00000000")
+    assert trade.net_pnl == Decimal("-5")
