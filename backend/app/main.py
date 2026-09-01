@@ -12,6 +12,7 @@ from app.core.database import engine
 from app.core.logging import logger
 from app.core.redis import redis_client
 from app.api import api_router
+from app.api.websocket import router as websocket_router
 from app.brokers.factory import BrokerFactory
 
 
@@ -77,6 +78,7 @@ app.mount("/metrics", metrics_app)
 
 # Include API routes
 app.include_router(api_router)
+app.include_router(websocket_router)
 
 
 @app.exception_handler(Exception)
