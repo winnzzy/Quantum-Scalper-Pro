@@ -80,6 +80,7 @@ class RiskState:
     consecutive_losses: int = 0
     daily_pnl: Decimal = Decimal("0")
     current_day: Optional[date] = None
+    daily_start_balance: Decimal = Decimal("100000")
     daily_locked: bool = False
     total_trades: int = 0
     trading_paused: bool = False
@@ -613,17 +614,21 @@ class BacktestingEngine:
         exit_side = "sell" if position.side == "buy" else "buy"
         exit_price = self._apply_fill_price(exit_price_raw, exit_side, spread, slippage_rate)
 
-        # Gross P&L
+        # Gross P&L at reference prices, before any execution costs.
         if position.side == "buy":
-            gross_pnl = (exit_price - position.entry_price) * position.quantity
+            gross_pnl = (
+                exit_price_raw - position.entry_reference_price
+            ) * position.quantity
         else:
-            gross_pnl = (position.entry_price - exit_price) * position.quantity
+            gross_pnl = (
+                position.entry_reference_price - exit_price_raw
+            ) * position.quantity
 
-        # Exit costs
+        # Exit costs. Spread and slippage are measured independently.
         exit_notional = exit_price * position.quantity
         exit_commission = (exit_notional * commission_rate).quantize(Decimal("0.01"))
-        exit_slippage = abs(exit_price - exit_price_raw) * position.quantity
-        exit_spread = (exit_price_raw * spread / 2) * position.quantity
+        exit_slippage = exit_price_raw * slippage_rate * position.quantity
+        exit_spread = exit_price_raw * spread / 2 * position.quantity
 
         # Total costs
         total_commission = position.entry_commission + exit_commission
@@ -721,10 +726,29 @@ class BacktestingEngine:
             state.trading_paused = True
             state.pause_reason = f"Consecutive losses {state.consecutive_losses} >= {self.max_consecutive_losses}"
 
-        daily_loss_pct = (state.daily_pnl / state.balance * 100) if state.balance > 0 else Decimal("0")
+        daily_loss_pct = (
+            state.daily_pnl / state.daily_start_balance * 100
+            if state.daily_start_balance > 0 else Decimal("0")
+        )
         if daily_loss_pct >= self.max_daily_loss_pct:
-            state.trading_paused = True
-            state.pause_reason = f"Daily loss {daily_loss_pct:.2f}% >= {self.max_daily_loss_pct}%"
+            state.daily_locked = True
+
+    def _roll_risk_day(self, state: RiskState, candle_time: Any):
+        """Reset daily loss protection when the UTC trading date changes."""
+        if candle_time is None:
+            return
+        timestamp = pd.Timestamp(candle_time)
+        if timestamp.tzinfo is None:
+            timestamp = timestamp.tz_localize("UTC")
+        else:
+            timestamp = timestamp.tz_convert("UTC")
+        trading_day = timestamp.date()
+
+        if state.current_day != trading_day:
+            state.current_day = trading_day
+            state.daily_start_balance = state.balance
+            state.daily_pnl = Decimal("0")
+            state.daily_locked = False
 
     # ──────────────────────────────────────────────────────────────────
     # Data loading
