@@ -16,6 +16,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application
 COPY app/ ./app/
 COPY alembic.ini .
+COPY migrations/ ./migrations/
 COPY pyproject.toml .
 
 # Create directories
