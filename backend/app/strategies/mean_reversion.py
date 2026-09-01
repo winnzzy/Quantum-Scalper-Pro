@@ -37,6 +37,8 @@ class MeanReversionScalper(BaseStrategy):
             "atr_period": 14,
             "atr_multiplier_sl": 1.5,
             "atr_multiplier_tp": 2.0,
+            "adx_period": 14,
+            "max_adx": 25.0,
         }
         if config:
             default_config.update(config)
@@ -63,6 +65,7 @@ class MeanReversionScalper(BaseStrategy):
             self.config["stoch_k"], self.config["stoch_d"]
         )
         df["atr"] = self.calculate_atr(df, self.config["atr_period"])
+        df["adx"] = self.calculate_adx(df, self.config["adx_period"])
 
         latest = df.iloc[-1]
         prev = df.iloc[-2]
@@ -71,6 +74,11 @@ class MeanReversionScalper(BaseStrategy):
         atr = Decimal(str(latest["atr"]))
         rsi = latest["rsi"]
         stoch_k = latest["stoch_k"]
+        adx = latest["adx"]
+
+        # Mean reversion is structurally unsafe in a strong directional move.
+        if pd.isna(adx) or adx > self.config["max_adx"]:
+            return None
 
         signal = None
 
@@ -92,7 +100,8 @@ class MeanReversionScalper(BaseStrategy):
                     "bb_upper": float(latest["bb_upper"]),
                     "rsi": float(rsi),
                     "stoch_k": float(stoch_k),
-                    "atr": float(latest["atr"])
+                    "atr": float(latest["atr"]),
+                    "adx": float(adx)
                 },
                 stop_loss=sl,
                 take_profit=tp,
@@ -118,7 +127,8 @@ class MeanReversionScalper(BaseStrategy):
                     "bb_upper": float(latest["bb_upper"]),
                     "rsi": float(rsi),
                     "stoch_k": float(stoch_k),
-                    "atr": float(latest["atr"])
+                    "atr": float(latest["atr"]),
+                    "adx": float(adx)
                 },
                 stop_loss=sl,
                 take_profit=tp,
@@ -133,7 +143,7 @@ class MeanReversionScalper(BaseStrategy):
         return None
 
     def get_required_indicators(self) -> list:
-        return ["bollinger_bands", "rsi", "stochastic"]
+        return ["bollinger_bands", "rsi", "stochastic", "adx"]
 
     def _calculate_confidence(self, latest: pd.Series, direction: str) -> float:
         rsi = latest["rsi"]
