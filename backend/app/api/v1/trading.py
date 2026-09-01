@@ -11,7 +11,7 @@ from app.core.database import get_db
 from app.auth.service import get_current_active_user
 from app.models.user import User
 from app.models.trading import Trade, TradeStatus, Position, Order, StrategyConfig
-from app.engines.trading import TradingEngine
+from app.engines.trading import trading_engine_manager
 from app.brokers.factory import BrokerFactory
 
 router = APIRouter()
@@ -26,6 +26,10 @@ class TradeCreate(BaseModel):
     take_profit: float | None = None
     order_type: str = "market"
     broker_type: str = "paper"
+
+
+class TradingStartRequest(BaseModel):
+    strategy_config_id: int
 
 
 class StrategyConfigCreate(BaseModel):
@@ -245,14 +249,14 @@ async def create_strategy_config(
 
 @router.post("/start")
 async def start_trading(
-    strategy_config_id: int,
+    request: TradingStartRequest,
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db)
 ):
     """Start trading engine."""
     result = await db.execute(
         select(StrategyConfig).where(
-            and_(StrategyConfig.id == strategy_config_id, StrategyConfig.user_id == current_user.id)
+            and_(StrategyConfig.id == request.strategy_config_id, StrategyConfig.user_id == current_user.id)
         )
     )
     config = result.scalar_one_or_none()
@@ -260,40 +264,39 @@ async def start_trading(
     if not config:
         raise HTTPException(status_code=404, detail="Strategy config not found")
 
-    engine = TradingEngine(db, current_user.id)
-
-    # Convert to dict for engine
+    # Convert the persisted configuration into the runtime contract.
     config_dict = {
         "strategy_type": config.strategy_type,
         "symbols": config.symbols,
         "timeframes": config.timeframes,
         "parameters": config.parameters,
         "broker_type": current_user.default_broker or "paper",
-        "is_active": config.is_active
+        "is_active": config.is_active,
+        "risk_per_trade": float(config.risk_per_trade) if config.risk_per_trade else None,
+        "use_ai_filter": config.use_ai_filter,
+        "use_news_filter": config.use_news_filter
     }
 
-    await engine.start([config_dict])
+    try:
+        runtime_status = await trading_engine_manager.start(current_user.id, [config_dict])
+    except (RuntimeError, ValueError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
-    return {"message": "Trading engine started", "status": await engine.get_status()}
+    return {"message": "Trading engine started", "status": runtime_status}
 
 
 @router.post("/stop")
 async def stop_trading(
     current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db)
 ):
     """Stop trading engine."""
-    engine = TradingEngine(db, current_user.id)
-    await engine.stop()
-
-    return {"message": "Trading engine stopped"}
+    runtime_status = await trading_engine_manager.stop(current_user.id)
+    return {"message": "Trading engine stopped", "status": runtime_status}
 
 
 @router.get("/status")
 async def get_trading_status(
     current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db)
 ):
     """Get trading engine status."""
-    engine = TradingEngine(db, current_user.id)
-    return await engine.get_status()
+    return await trading_engine_manager.status(current_user.id)

@@ -22,5 +22,6 @@ COPY pyproject.toml .
 # Create directories
 RUN mkdir -p /app/data /app/logs /app/backups
 
-# Run migrations and start
-CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4"]
+# The in-process trading runtime requires one API worker. Move it to a
+# dedicated distributed worker before increasing web concurrency.
+CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1"]

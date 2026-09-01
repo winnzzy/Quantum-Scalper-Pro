@@ -41,6 +41,8 @@ async def lifespan(app: FastAPI):
     logger.info("Shutting down application")
 
     await news_filter.stop()
+    from app.engines.trading import trading_engine_manager
+    await trading_engine_manager.stop_all()
     await BrokerFactory.disconnect_all()
     await redis_client.disconnect()
     await engine.dispose()
