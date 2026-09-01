@@ -96,10 +96,28 @@ class BaseStrategy(ABC):
         return upper, sma, lower
 
     def calculate_vwap(self, df: pd.DataFrame) -> pd.Series:
-        """Calculate Volume Weighted Average Price."""
+        """Calculate session-anchored VWAP without leaking prior days."""
         typical_price = (df["high"] + df["low"] + df["close"]) / 3
-        vwap = (typical_price * df["volume"]).cumsum() / df["volume"].cumsum()
-        return vwap
+        volume = pd.to_numeric(df["volume"], errors="coerce").fillna(0).clip(lower=0)
+        price_volume = typical_price * volume
+
+        if "timestamp" in df.columns:
+            timestamps = pd.to_datetime(df["timestamp"], utc=True, errors="coerce")
+            if timestamps.notna().all():
+                sessions = timestamps.dt.date
+                cumulative_pv = price_volume.groupby(sessions).cumsum()
+                cumulative_volume = volume.groupby(sessions).cumsum()
+                vwap = cumulative_pv / cumulative_volume.replace(0, np.nan)
+                # A zero-volume candle uses the most recent VWAP in its own
+                # session; the session's first such candle falls back to price.
+                vwap = vwap.groupby(sessions).ffill()
+                return vwap.fillna(typical_price)
+
+        # Timestamp-free frames are treated as one explicit session. This keeps
+        # strategy unit tests and broker snapshots deterministic.
+        cumulative_volume = volume.cumsum()
+        vwap = price_volume.cumsum() / cumulative_volume.replace(0, np.nan)
+        return vwap.ffill().fillna(typical_price)
 
     def calculate_stochastic(self, high: pd.Series, low: pd.Series, close: pd.Series, 
                             k_period: int = 14, d_period: int = 3) -> tuple:
