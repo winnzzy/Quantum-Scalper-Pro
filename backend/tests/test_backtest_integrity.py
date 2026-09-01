@@ -146,3 +146,73 @@ def test_ambiguous_intrabar_exit_uses_stop_loss():
     assert trade.exit_reason == "ambiguous_stop_loss"
     assert trade.exit_price == Decimal("95.00000000")
     assert trade.net_pnl == Decimal("-5")
+
+
+@pytest.mark.asyncio
+async def test_walk_forward_selects_on_train_and_reports_unseen_windows(monkeypatch):
+    engine = BacktestingEngine()
+    start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    rows = []
+    for index in range(200):
+        price = 100.0 + index * 0.01
+        rows.append({
+            "timestamp": start + timedelta(minutes=index),
+            "open": price,
+            "high": price + 0.1,
+            "low": price - 0.1,
+            "close": price,
+            "volume": 1000.0,
+        })
+    frame = pd.DataFrame(rows)
+    calls = []
+
+    async def fake_load(*args, **kwargs):
+        return frame
+
+    async def fake_run(**kwargs):
+        calls.append(kwargs)
+        preferred = kwargs["parameters"].get("variant") == "stable"
+        return {
+            "total_trades": 12,
+            "winning_trades": 8 if preferred else 5,
+            "losing_trades": 4 if preferred else 7,
+            "win_rate": 66.67 if preferred else 41.67,
+            "gross_profit": 240.0 if preferred else 100.0,
+            "gross_loss": 100.0,
+            "net_pnl": 140.0 if preferred else 0.0,
+            "profit_factor": 2.4 if preferred else 1.0,
+            "sharpe_ratio": 1.5 if preferred else 0.1,
+            "sortino_ratio": 1.8 if preferred else 0.1,
+            "max_drawdown_pct": 4.0 if preferred else 9.0,
+        }
+
+    monkeypatch.setattr(engine, "_load_data", fake_load)
+    monkeypatch.setattr(engine, "run", fake_run)
+
+    result = await engine.run_walk_forward(
+        strategy_name="ema_scalper",
+        symbol="BTC/USDT",
+        parameter_candidates=[
+            {"variant": "unstable"},
+            {"variant": "stable"},
+        ],
+        train_candles=80,
+        test_candles=60,
+        step_candles=60,
+    )
+
+    assert len(result["windows"]) == 2
+    assert all(
+        window["selected_parameters"] == {"variant": "stable"}
+        for window in result["windows"]
+    )
+    assert all(
+        pd.Timestamp(window["train_period"]["end"])
+        < pd.Timestamp(window["test_period"]["start"])
+        for window in result["windows"]
+    )
+    assert result["out_of_sample_summary"]["window_count"] == 2
+    assert result["out_of_sample_summary"]["validation_status"] == (
+        "insufficient_evidence"
+    )
+    assert len(calls) == 6
