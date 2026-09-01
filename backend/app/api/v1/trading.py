@@ -28,6 +28,10 @@ class TradeCreate(BaseModel):
     broker_type: str = "paper"
 
 
+class TradingStartRequest(BaseModel):
+    strategy_config_id: int
+
+
 class StrategyConfigCreate(BaseModel):
     name: str
     strategy_type: str
@@ -245,14 +249,14 @@ async def create_strategy_config(
 
 @router.post("/start")
 async def start_trading(
-    strategy_config_id: int,
+    request: TradingStartRequest,
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db)
 ):
     """Start trading engine."""
     result = await db.execute(
         select(StrategyConfig).where(
-            and_(StrategyConfig.id == strategy_config_id, StrategyConfig.user_id == current_user.id)
+            and_(StrategyConfig.id == request.strategy_config_id, StrategyConfig.user_id == current_user.id)
         )
     )
     config = result.scalar_one_or_none()
