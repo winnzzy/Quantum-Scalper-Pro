@@ -11,6 +11,7 @@ import {
   Activity,
   Zap,
   Users,
+  CreditCard,
 } from 'lucide-react';
 
 const Layout: React.FC = () => {
@@ -29,6 +30,7 @@ const Layout: React.FC = () => {
     { to: '/analytics', icon: BarChart3, label: 'Analytics' },
     { to: '/strategies', icon: Zap, label: 'Strategies' },
     { to: '/risk', icon: Shield, label: 'Risk Center' },
+    { to: '/billing', icon: CreditCard, label: 'Plans & Billing' },
     { to: '/settings', icon: Settings, label: 'Settings' },
   ];
 
