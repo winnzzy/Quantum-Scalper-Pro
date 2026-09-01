@@ -5,13 +5,8 @@ import { toast } from 'react-hot-toast';
 import { X, TrendingUp, TrendingDown, Clock } from 'lucide-react';
 
 const Positions: React.FC = () => {
-  const { data: positions, refetch } = useQuery('positions', () => tradingAPI.getPositions(), {
-    refetchInterval: 5000,
-  });
-
-  const { data: trades } = useQuery('trades', () => tradingAPI.getTrades('open'), {
-    refetchInterval: 5000,
-  });
+  const { data: positions, refetch } = useQuery('positions', () => tradingAPI.getPositions());
+  const { data: trades } = useQuery('trades', () => tradingAPI.getTrades('open'));
 
   const closeMutation = useMutation(
     (tradeId: number) => tradingAPI.closeTrade(tradeId),
