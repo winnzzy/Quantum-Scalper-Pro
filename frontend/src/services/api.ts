@@ -1,5 +1,11 @@
 import axios from 'axios';
 import { useAuthStore } from '../store/authStore';
+import {
+  CheckoutResponse,
+  CustomerSubscription,
+  PortalResponse,
+  SubscriptionPlan,
+} from '../types/api';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
 
@@ -65,4 +71,16 @@ export const riskAPI = {
 export const analyticsAPI = {
   getPerformance: (period: string) => api.get('/analytics/performance', { params: { period } }),
   getDistribution: () => api.get('/analytics/trades/distribution'),
+};
+
+
+export const billingAPI = {
+  getPlans: () => api.get<{ plans: SubscriptionPlan[] }>('/billing/plans'),
+  getSubscription: () =>
+    api.get<{ subscription: CustomerSubscription | null }>('/billing/subscription'),
+  createCheckout: (planId: number) =>
+    api.post<CheckoutResponse>('/billing/checkout', { plan_id: planId }),
+  createPortal: () => api.post<PortalResponse>('/billing/portal', {}),
+  cancel: (atPeriodEnd = true, reason?: string) =>
+    api.post('/billing/cancel', { at_period_end: atPeriodEnd, reason }),
 };

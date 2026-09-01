@@ -13,6 +13,7 @@ import Strategies from './pages/Strategies';
 import RiskCenter from './pages/RiskCenter';
 import Settings from './pages/Settings';
 import AdminDashboard from './pages/AdminDashboard';
+import Billing from './pages/Billing';
 import { useAuthStore } from './store/authStore';
 
 const queryClient = new QueryClient({
@@ -41,6 +42,7 @@ function App() {
             <Route path="strategies" element={<Strategies />} />
             <Route path="risk" element={<RiskCenter />} />
             <Route path="settings" element={<Settings />} />
+            <Route path="billing" element={<Billing />} />
             <Route path="admin" element={<AdminDashboard />} />
           </Route>
         </Routes>

@@ -73,6 +73,8 @@ jobs:
             "risk_profiles", "risk_events", "trade_journals",
             "performance_reports", "licenses", "license_usage",
             "audit_logs", "system_health", "notifications",
+            "subscription_plans", "customer_subscriptions", "payments",
+            "devices", "license_activations", "webhook_events", "usage_records",
         }
 
         async def verify():

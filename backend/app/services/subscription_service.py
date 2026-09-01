@@ -95,6 +95,7 @@ class SubscriptionService:
                     billing_interval=BillingInterval.MONTHLY,
                     price=Decimal("29.99"),
                     display_name="Starter",
+                    stripe_price_id=settings.STRIPE_PRICE_STARTER_MONTHLY,
                     description="Live trading with essential strategies",
                     max_devices=1,
                     max_strategies=5,
@@ -113,6 +114,7 @@ class SubscriptionService:
                     billing_interval=BillingInterval.ANNUAL,
                     price=Decimal("299.90"),
                     display_name="Starter Annual",
+                    stripe_price_id=settings.STRIPE_PRICE_STARTER_ANNUAL,
                     description="Live trading — save 17%",
                     max_devices=1,
                     max_strategies=5,
@@ -131,6 +133,7 @@ class SubscriptionService:
                     billing_interval=BillingInterval.MONTHLY,
                     price=Decimal("79.99"),
                     display_name="Professional",
+                    stripe_price_id=settings.STRIPE_PRICE_PROFESSIONAL_MONTHLY,
                     description="All strategies, AI filter, advanced analytics",
                     max_devices=3,
                     max_strategies=15,
@@ -151,6 +154,7 @@ class SubscriptionService:
                     billing_interval=BillingInterval.ANNUAL,
                     price=Decimal("799.90"),
                     display_name="Professional Annual",
+                    stripe_price_id=settings.STRIPE_PRICE_PROFESSIONAL_ANNUAL,
                     description="All strategies — save 17%",
                     max_devices=3,
                     max_strategies=15,
@@ -171,6 +175,7 @@ class SubscriptionService:
                     billing_interval=BillingInterval.MONTHLY,
                     price=Decimal("249.99"),
                     display_name="Enterprise",
+                    stripe_price_id=settings.STRIPE_PRICE_ENTERPRISE_MONTHLY,
                     description="Unlimited everything, white-label, API access",
                     max_devices=10,
                     max_strategies=50,
@@ -193,6 +198,7 @@ class SubscriptionService:
                     billing_interval=BillingInterval.ANNUAL,
                     price=Decimal("2499.90"),
                     display_name="Enterprise Annual",
+                    stripe_price_id=settings.STRIPE_PRICE_ENTERPRISE_ANNUAL,
                     description="Enterprise — save 17%",
                     max_devices=10,
                     max_strategies=50,
@@ -419,8 +425,8 @@ class SubscriptionService:
                 )
 
             # Store pending downgrade in metadata
-            current_sub.metadata = {
-                **(current_sub.metadata or {}),
+            current_sub.metadata_json = {
+                **(current_sub.metadata_json or {}),
                 "pending_downgrade_plan_id": new_plan_id,
                 "pending_downgrade_at": current_sub.current_period_end.isoformat() if current_sub.current_period_end else None,
             }
@@ -458,8 +464,8 @@ class SubscriptionService:
 
             if at_period_end:
                 subscription.cancel_at_period_end = True
-                subscription.metadata = {
-                    **(subscription.metadata or {}),
+                subscription.metadata_json = {
+                    **(subscription.metadata_json or {}),
                     "cancellation_reason": reason,
                     "cancellation_feedback": feedback,
                 }
