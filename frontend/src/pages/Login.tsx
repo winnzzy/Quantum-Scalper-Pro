@@ -4,6 +4,7 @@ import { useAuthStore } from '../store/authStore';
 import { authAPI } from '../services/api';
 import { toast } from 'react-hot-toast';
 import { Lock, Mail, Eye, EyeOff } from 'lucide-react';
+import { getApiErrorMessage } from '../utils/errors';
 
 const Login: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -26,8 +27,8 @@ const Login: React.FC = () => {
       setAuth(access_token, refresh_token, userResponse.data);
       toast.success('Login successful!');
       navigate('/');
-    } catch (error: any) {
-      toast.error(error.response?.data?.detail || 'Login failed');
+    } catch (error: unknown) {
+      toast.error(getApiErrorMessage(error, 'Login failed'));
     } finally {
       setLoading(false);
     }
