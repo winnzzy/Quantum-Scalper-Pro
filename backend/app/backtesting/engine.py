@@ -16,7 +16,7 @@ Usage:
     engine = BacktestingEngine()
     results = await engine.run(strategy_name, symbol, timeframe, start_date, end_date)
 """
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, ROUND_DOWN
 from typing import Dict, Any, Optional, List
 from pathlib import Path
@@ -42,6 +42,7 @@ class BacktestPosition:
     symbol: str
     side: str  # "buy" or "sell"
     entry_price: Decimal
+    entry_reference_price: Decimal
     quantity: Decimal
     stop_loss: Optional[Decimal] = None
     take_profit: Optional[Decimal] = None
@@ -78,6 +79,8 @@ class RiskState:
     max_drawdown: Decimal = Decimal("0")
     consecutive_losses: int = 0
     daily_pnl: Decimal = Decimal("0")
+    current_day: Optional[date] = None
+    daily_locked: bool = False
     total_trades: int = 0
     trading_paused: bool = False
     pause_reason: str = ""
@@ -180,6 +183,7 @@ class BacktestingEngine:
             candle_high = Decimal(str(candle["high"]))
             candle_low = Decimal(str(candle["low"]))
             candle_open = Decimal(str(candle["open"]))
+            self._roll_risk_day(risk_state, candle_time)
 
             # ── 1. Check stop-loss / take-profit hits on current candle ──
             if position:
@@ -214,13 +218,9 @@ class BacktestingEngine:
                         (signal.type.value == "sell" and position.side == "buy")
                     )
                     if is_reverse:
-                        # Close existing position at signal price
-                        exit_price = self._apply_fill_price(
-                            signal.price, "sell" if position.side == "buy" else "buy",
-                            spread, slip
-                        )
+                        # Close at the raw signal price; _close_position applies costs once.
                         trade = self._close_position(
-                            position, exit_price, candle_time, "signal_reversal",
+                            position, signal.price, candle_time, "signal_reversal",
                             comm, slip, spread
                         )
                         trades.append(trade)
@@ -237,6 +237,9 @@ class BacktestingEngine:
 
                 # ── 4. Open new position (if flat) ──
                 if position is None:
+                    if risk_state.daily_locked:
+                        continue
+
                     # Risk check: mandatory stop loss
                     if self.mandatory_stop_loss and signal.stop_loss is None:
                         continue  # Skip signal
@@ -268,13 +271,14 @@ class BacktestingEngine:
                     # Calculate entry costs
                     notional = fill_price * quantity
                     entry_commission = (notional * comm).quantize(Decimal("0.01"))
-                    entry_slippage_cost = abs(fill_price - signal.price) * quantity
-                    entry_spread_cost = (signal.price * spread / 2) * quantity  # Half spread at entry
+                    entry_slippage_cost = signal.price * slip * quantity
+                    entry_spread_cost = signal.price * spread / 2 * quantity  # Half spread at entry
 
                     position = BacktestPosition(
                         symbol=symbol,
                         side=signal.type.value,
                         entry_price=fill_price,
+                        entry_reference_price=signal.price,
                         quantity=quantity,
                         stop_loss=signal.stop_loss,
                         take_profit=signal.take_profit,
@@ -308,13 +312,8 @@ class BacktestingEngine:
         if position:
             last_candle = df.iloc[-1]
             exit_price_raw = Decimal(str(last_candle["close"]))
-            exit_price = self._apply_fill_price(
-                exit_price_raw,
-                "sell" if position.side == "buy" else "buy",
-                spread, slip
-            )
             trade = self._close_position(
-                position, exit_price,
+                position, exit_price_raw,
                 last_candle.get("timestamp"), "backtest_end",
                 comm, slip, spread
             )
