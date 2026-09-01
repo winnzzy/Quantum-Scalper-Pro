@@ -97,10 +97,12 @@ class NotificationEngine:
         await self._send_web_notification(user_id, "alert", notification)
 
         if priority == "critical" and self.telegram_bot:
-            await self._send_telegram(f"🚨 *CRITICAL ALERT*
+            await self._send_telegram(
+                f"""🚨 *CRITICAL ALERT*
 
 *{title}*
-{message}")
+{message}"""
+            )
 
     def _build_trade_message(self, event_type: str, trade: Any) -> Dict[str, str]:
         """Build formatted messages for different channels."""
@@ -120,15 +122,15 @@ P&L: {pnl}
 """
 
         if event_type == "stop_loss_hit":
-            telegram_msg = f"🛑 *Stop Loss Hit*
+            telegram_msg = f"""🛑 *Stop Loss Hit*
 
 Symbol: `{symbol}`
-P&L: {pnl}"
+P&L: {pnl}"""
         elif event_type == "take_profit_hit":
-            telegram_msg = f"🎯 *Take Profit Hit*
+            telegram_msg = f"""🎯 *Take Profit Hit*
 
 Symbol: `{symbol}`
-P&L: {pnl}"
+P&L: {pnl}"""
 
         web_msg = {
             "title": f"Trade {event_type.replace('_', ' ').title()}",
