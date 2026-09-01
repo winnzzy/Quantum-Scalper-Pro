@@ -284,7 +284,6 @@ async def start_trading(
 @router.post("/stop")
 async def stop_trading(
     current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db)
 ):
     """Stop trading engine."""
     runtime_status = await trading_engine_manager.stop(current_user.id)
@@ -294,7 +293,6 @@ async def stop_trading(
 @router.get("/status")
 async def get_trading_status(
     current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db)
 ):
     """Get trading engine status."""
     return await trading_engine_manager.status(current_user.id)
