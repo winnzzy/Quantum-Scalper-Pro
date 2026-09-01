@@ -86,6 +86,12 @@ class Settings(BaseSettings):
     # Billing
     STRIPE_SECRET_KEY: str | None = None
     STRIPE_WEBHOOK_SECRET: str | None = None
+    STRIPE_PRICE_STARTER_MONTHLY: str | None = None
+    STRIPE_PRICE_STARTER_ANNUAL: str | None = None
+    STRIPE_PRICE_PROFESSIONAL_MONTHLY: str | None = None
+    STRIPE_PRICE_PROFESSIONAL_ANNUAL: str | None = None
+    STRIPE_PRICE_ENTERPRISE_MONTHLY: str | None = None
+    STRIPE_PRICE_ENTERPRISE_ANNUAL: str | None = None
     FRONTEND_URL: str = "http://localhost:3000"
 
     # Licensing
