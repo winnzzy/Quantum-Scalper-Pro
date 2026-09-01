@@ -45,8 +45,11 @@ class BreakoutScalper(BaseStrategy):
         lookback = self.config["lookback_period"]
 
         # Calculate support/resistance
-        df["resistance"] = df["high"].rolling(window=lookback).max()
-        df["support"] = df["low"].rolling(window=lookback).min()
+        # Shift levels so the current candle is tested only against information
+        # available before it began. Including the current high/low makes a
+        # close-above-resistance or close-below-support signal impossible.
+        df["resistance"] = df["high"].rolling(window=lookback).max().shift(1)
+        df["support"] = df["low"].rolling(window=lookback).min().shift(1)
         df["volume_ma"] = df["volume"].rolling(window=20).mean()
         df["atr"] = self.calculate_atr(df, self.config["atr_period"])
 

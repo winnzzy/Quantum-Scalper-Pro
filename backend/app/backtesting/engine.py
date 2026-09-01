@@ -16,7 +16,7 @@ Usage:
     engine = BacktestingEngine()
     results = await engine.run(strategy_name, symbol, timeframe, start_date, end_date)
 """
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, ROUND_DOWN
 from typing import Dict, Any, Optional, List
 from pathlib import Path
@@ -42,6 +42,7 @@ class BacktestPosition:
     symbol: str
     side: str  # "buy" or "sell"
     entry_price: Decimal
+    entry_reference_price: Decimal
     quantity: Decimal
     stop_loss: Optional[Decimal] = None
     take_profit: Optional[Decimal] = None
@@ -78,6 +79,9 @@ class RiskState:
     max_drawdown: Decimal = Decimal("0")
     consecutive_losses: int = 0
     daily_pnl: Decimal = Decimal("0")
+    current_day: Optional[date] = None
+    daily_start_balance: Decimal = Decimal("100000")
+    daily_locked: bool = False
     total_trades: int = 0
     trading_paused: bool = False
     pause_reason: str = ""
@@ -128,6 +132,7 @@ class BacktestingEngine:
         spread_pct: Optional[float] = None,
         commission_rate: Optional[float] = None,
         slippage_rate: Optional[float] = None,
+        allow_synthetic_data: bool = False,
     ) -> Dict[str, Any]:
         """
         Run backtest with full institutional-grade simulation.
@@ -145,7 +150,9 @@ class BacktestingEngine:
         slip = Decimal(str(slippage_rate)) if slippage_rate else self.slippage_rate
 
         # Load historical data
-        df = await self._load_data(symbol, timeframe, start_date, end_date)
+        df = await self._load_data(
+            symbol, timeframe, start_date, end_date, allow_synthetic_data
+        )
 
         if df is None or len(df) < 50:
             return {"error": "Insufficient historical data"}
@@ -180,6 +187,7 @@ class BacktestingEngine:
             candle_high = Decimal(str(candle["high"]))
             candle_low = Decimal(str(candle["low"]))
             candle_open = Decimal(str(candle["open"]))
+            self._roll_risk_day(risk_state, candle_time)
 
             # ── 1. Check stop-loss / take-profit hits on current candle ──
             if position:
@@ -214,13 +222,9 @@ class BacktestingEngine:
                         (signal.type.value == "sell" and position.side == "buy")
                     )
                     if is_reverse:
-                        # Close existing position at signal price
-                        exit_price = self._apply_fill_price(
-                            signal.price, "sell" if position.side == "buy" else "buy",
-                            spread, slip
-                        )
+                        # Close at the raw signal price; _close_position applies costs once.
                         trade = self._close_position(
-                            position, exit_price, candle_time, "signal_reversal",
+                            position, signal.price, candle_time, "signal_reversal",
                             comm, slip, spread
                         )
                         trades.append(trade)
@@ -237,6 +241,9 @@ class BacktestingEngine:
 
                 # ── 4. Open new position (if flat) ──
                 if position is None:
+                    if risk_state.daily_locked:
+                        continue
+
                     # Risk check: mandatory stop loss
                     if self.mandatory_stop_loss and signal.stop_loss is None:
                         continue  # Skip signal
@@ -268,13 +275,14 @@ class BacktestingEngine:
                     # Calculate entry costs
                     notional = fill_price * quantity
                     entry_commission = (notional * comm).quantize(Decimal("0.01"))
-                    entry_slippage_cost = abs(fill_price - signal.price) * quantity
-                    entry_spread_cost = (signal.price * spread / 2) * quantity  # Half spread at entry
+                    entry_slippage_cost = signal.price * slip * quantity
+                    entry_spread_cost = signal.price * spread / 2 * quantity  # Half spread at entry
 
                     position = BacktestPosition(
                         symbol=symbol,
                         side=signal.type.value,
                         entry_price=fill_price,
+                        entry_reference_price=signal.price,
                         quantity=quantity,
                         stop_loss=signal.stop_loss,
                         take_profit=signal.take_profit,
@@ -298,9 +306,6 @@ class BacktestingEngine:
             # Track peak / drawdown
             if current_equity > float(risk_state.peak_equity):
                 risk_state.peak_equity = Decimal(str(current_equity))
-            dd = float(risk_state.peak_equity) - current_equity
-            if dd > float(risk_state.max_drawdown):
-                risk_state.max_drawdown = Decimal(str(dd))
 
         # ──────────────────────────────────────────────────────────────
         # Close any remaining position at last candle close
@@ -308,13 +313,8 @@ class BacktestingEngine:
         if position:
             last_candle = df.iloc[-1]
             exit_price_raw = Decimal(str(last_candle["close"]))
-            exit_price = self._apply_fill_price(
-                exit_price_raw,
-                "sell" if position.side == "buy" else "buy",
-                spread, slip
-            )
             trade = self._close_position(
-                position, exit_price,
+                position, exit_price_raw,
                 last_candle.get("timestamp"), "backtest_end",
                 comm, slip, spread
             )
@@ -364,13 +364,15 @@ class BacktestingEngine:
 
         # Max drawdown percentage
         peak = initial_balance
+        max_dd_amount = 0.0
         max_dd_pct = 0.0
         for eq in equity_curve:
             if eq > peak:
                 peak = eq
-            dd = (peak - eq) / peak * 100 if peak > 0 else 0
-            if dd > max_dd_pct:
-                max_dd_pct = dd
+            dd_amount = peak - eq
+            dd = dd_amount / peak * 100 if peak > 0 else 0
+            max_dd_amount = max(max_dd_amount, dd_amount)
+            max_dd_pct = max(max_dd_pct, dd)
 
         # Average trade duration
         durations = []
@@ -432,7 +434,7 @@ class BacktestingEngine:
             "profit_factor": round(profit_factor, 4),
             "sharpe_ratio": round(float(sharpe), 4),
             "sortino_ratio": round(float(sortino), 4),
-            "max_drawdown": round(float(risk_state.max_drawdown), 2),
+            "max_drawdown": round(max_dd_amount, 2),
             "max_drawdown_pct": round(max_dd_pct, 2),
             "avg_trade_duration_min": round(float(avg_duration), 2),
             "max_consecutive_wins": max_consec_wins,
@@ -465,7 +467,11 @@ class BacktestingEngine:
             "timeframe": timeframe,
             "strategy": strategy_name,
             "candles_processed": len(df) - min_periods,
-            "data_source": "historical" if (self.data_path / f"{symbol.replace('/', '_')}_{timeframe}.csv").exists() else "synthetic",
+            "data_source": (
+                "historical"
+                if (self.data_path / f"{symbol.replace('/', '_')}_{timeframe}.csv").exists()
+                else "synthetic_test_only"
+            ),
         }
 
         logger.info(
@@ -614,17 +620,21 @@ class BacktestingEngine:
         exit_side = "sell" if position.side == "buy" else "buy"
         exit_price = self._apply_fill_price(exit_price_raw, exit_side, spread, slippage_rate)
 
-        # Gross P&L
+        # Gross P&L at reference prices, before any execution costs.
         if position.side == "buy":
-            gross_pnl = (exit_price - position.entry_price) * position.quantity
+            gross_pnl = (
+                exit_price_raw - position.entry_reference_price
+            ) * position.quantity
         else:
-            gross_pnl = (position.entry_price - exit_price) * position.quantity
+            gross_pnl = (
+                position.entry_reference_price - exit_price_raw
+            ) * position.quantity
 
-        # Exit costs
+        # Exit costs. Spread and slippage are measured independently.
         exit_notional = exit_price * position.quantity
         exit_commission = (exit_notional * commission_rate).quantize(Decimal("0.01"))
-        exit_slippage = abs(exit_price - exit_price_raw) * position.quantity
-        exit_spread = (exit_price_raw * spread / 2) * position.quantity
+        exit_slippage = exit_price_raw * slippage_rate * position.quantity
+        exit_spread = exit_price_raw * spread / 2 * position.quantity
 
         # Total costs
         total_commission = position.entry_commission + exit_commission
@@ -722,10 +732,29 @@ class BacktestingEngine:
             state.trading_paused = True
             state.pause_reason = f"Consecutive losses {state.consecutive_losses} >= {self.max_consecutive_losses}"
 
-        daily_loss_pct = (state.daily_pnl / state.balance * 100) if state.balance > 0 else Decimal("0")
+        daily_loss_pct = (
+            state.daily_pnl / state.daily_start_balance * 100
+            if state.daily_start_balance > 0 else Decimal("0")
+        )
         if daily_loss_pct >= self.max_daily_loss_pct:
-            state.trading_paused = True
-            state.pause_reason = f"Daily loss {daily_loss_pct:.2f}% >= {self.max_daily_loss_pct}%"
+            state.daily_locked = True
+
+    def _roll_risk_day(self, state: RiskState, candle_time: Any):
+        """Reset daily loss protection when the UTC trading date changes."""
+        if candle_time is None:
+            return
+        timestamp = pd.Timestamp(candle_time)
+        if timestamp.tzinfo is None:
+            timestamp = timestamp.tz_localize("UTC")
+        else:
+            timestamp = timestamp.tz_convert("UTC")
+        trading_day = timestamp.date()
+
+        if state.current_day != trading_day:
+            state.current_day = trading_day
+            state.daily_start_balance = state.balance
+            state.daily_pnl = Decimal("0")
+            state.daily_locked = False
 
     # ──────────────────────────────────────────────────────────────────
     # Data loading
@@ -736,7 +765,8 @@ class BacktestingEngine:
         symbol: str,
         timeframe: str,
         start_date: Optional[datetime],
-        end_date: Optional[datetime]
+        end_date: Optional[datetime],
+        allow_synthetic_data: bool = False,
     ) -> Optional[pd.DataFrame]:
         """Load historical OHLCV data."""
         file_path = self.data_path / f"{symbol.replace('/', '_')}_{timeframe}.csv"
@@ -757,7 +787,16 @@ class BacktestingEngine:
 
             return df
 
-        logger.warning(f"No historical data found for {symbol}, generating synthetic data")
+        if not allow_synthetic_data:
+            logger.error(
+                f"No historical data found for {symbol} {timeframe}; "
+                "synthetic results are disabled for performance validation"
+            )
+            return None
+
+        logger.warning(
+            f"No historical data found for {symbol}; generating test-only synthetic data"
+        )
         return self._generate_synthetic_data(symbol, timeframe)
 
     def _validate_ohlcv(self, df: pd.DataFrame) -> pd.DataFrame:
