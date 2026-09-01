@@ -102,7 +102,7 @@ const Billing: React.FC = () => {
                   {plan.features.map((feature) => (
                     <li key={feature} className="flex text-sm text-gray-700">
                       <Check className="mr-2 h-4 w-4 shrink-0 text-success" />
-                      {feature.replaceAll('_', ' ')}
+                      {feature.replace(/_/g, ' ')}
                     </li>
                   ))}
                 </ul>
