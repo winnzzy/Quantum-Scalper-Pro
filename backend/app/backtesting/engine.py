@@ -132,6 +132,7 @@ class BacktestingEngine:
         spread_pct: Optional[float] = None,
         commission_rate: Optional[float] = None,
         slippage_rate: Optional[float] = None,
+        allow_synthetic_data: bool = False,
     ) -> Dict[str, Any]:
         """
         Run backtest with full institutional-grade simulation.
@@ -149,7 +150,9 @@ class BacktestingEngine:
         slip = Decimal(str(slippage_rate)) if slippage_rate else self.slippage_rate
 
         # Load historical data
-        df = await self._load_data(symbol, timeframe, start_date, end_date)
+        df = await self._load_data(
+            symbol, timeframe, start_date, end_date, allow_synthetic_data
+        )
 
         if df is None or len(df) < 50:
             return {"error": "Insufficient historical data"}
@@ -465,7 +468,11 @@ class BacktestingEngine:
             "timeframe": timeframe,
             "strategy": strategy_name,
             "candles_processed": len(df) - min_periods,
-            "data_source": "historical" if (self.data_path / f"{symbol.replace('/', '_')}_{timeframe}.csv").exists() else "synthetic",
+            "data_source": (
+                "historical"
+                if (self.data_path / f"{symbol.replace('/', '_')}_{timeframe}.csv").exists()
+                else "synthetic_test_only"
+            ),
         }
 
         logger.info(
@@ -759,7 +766,8 @@ class BacktestingEngine:
         symbol: str,
         timeframe: str,
         start_date: Optional[datetime],
-        end_date: Optional[datetime]
+        end_date: Optional[datetime],
+        allow_synthetic_data: bool = False,
     ) -> Optional[pd.DataFrame]:
         """Load historical OHLCV data."""
         file_path = self.data_path / f"{symbol.replace('/', '_')}_{timeframe}.csv"
@@ -780,7 +788,16 @@ class BacktestingEngine:
 
             return df
 
-        logger.warning(f"No historical data found for {symbol}, generating synthetic data")
+        if not allow_synthetic_data:
+            logger.error(
+                f"No historical data found for {symbol} {timeframe}; "
+                "synthetic results are disabled for performance validation"
+            )
+            return None
+
+        logger.warning(
+            f"No historical data found for {symbol}; generating test-only synthetic data"
+        )
         return self._generate_synthetic_data(symbol, timeframe)
 
     def _validate_ohlcv(self, df: pd.DataFrame) -> pd.DataFrame:
