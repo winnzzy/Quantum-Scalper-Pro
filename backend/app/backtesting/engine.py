@@ -501,6 +501,230 @@ class BacktestingEngine:
 
         return result_dict
 
+    async def run_walk_forward(
+        self,
+        strategy_name: str,
+        symbol: str,
+        timeframe: str = "1m",
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
+        initial_balance: float = 100000.0,
+        parameter_candidates: Optional[List[Dict[str, Any]]] = None,
+        train_candles: int = 1000,
+        test_candles: int = 250,
+        step_candles: Optional[int] = None,
+        min_train_trades: int = 5,
+        risk_per_trade_pct: Optional[float] = None,
+        max_drawdown_pct: Optional[float] = None,
+        max_consecutive_losses: Optional[int] = None,
+        spread_pct: Optional[float] = None,
+        commission_rate: Optional[float] = None,
+        slippage_rate: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        """Select on rolling training windows and report unseen test results."""
+        if train_candles < 60 or test_candles < 60:
+            return {"error": "Training and test windows must each contain at least 60 candles"}
+        step = step_candles or test_candles
+        if step <= 0:
+            return {"error": "step_candles must be positive"}
+
+        candidates = parameter_candidates or [{}]
+        if len(candidates) > 50:
+            return {"error": "A maximum of 50 parameter candidates is supported"}
+
+        df = await self._load_data(
+            symbol, timeframe, start_date, end_date, allow_synthetic_data=False
+        )
+        if df is None:
+            return {"error": "Historical data is required for walk-forward validation"}
+        if "timestamp" not in df.columns:
+            return {"error": "Timestamped historical data is required"}
+
+        df = df.sort_values("timestamp").reset_index(drop=True)
+        required = train_candles + test_candles
+        if len(df) < required:
+            return {
+                "error": (
+                    f"Insufficient data: {len(df)} candles available, "
+                    f"{required} required for one window"
+                )
+            }
+
+        windows = []
+        test_start_index = train_candles
+        while test_start_index + test_candles <= len(df):
+            train_start_index = test_start_index - train_candles
+            train_end_index = test_start_index - 1
+            test_end_index = test_start_index + test_candles - 1
+
+            train_start = df.iloc[train_start_index]["timestamp"]
+            train_end = df.iloc[train_end_index]["timestamp"]
+            test_start = df.iloc[test_start_index]["timestamp"]
+            test_end = df.iloc[test_end_index]["timestamp"]
+
+            training_results = []
+            for candidate in candidates:
+                result = await self.run(
+                    strategy_name=strategy_name,
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    start_date=train_start,
+                    end_date=train_end,
+                    initial_balance=initial_balance,
+                    parameters=candidate,
+                    risk_per_trade_pct=risk_per_trade_pct,
+                    max_drawdown_pct=max_drawdown_pct,
+                    max_consecutive_losses=max_consecutive_losses,
+                    spread_pct=spread_pct,
+                    commission_rate=commission_rate,
+                    slippage_rate=slippage_rate,
+                    allow_synthetic_data=False,
+                )
+                training_results.append((candidate, result))
+
+            selected_parameters, selected_training = max(
+                training_results,
+                key=lambda item: self._walk_forward_score(
+                    item[1], min_train_trades
+                ),
+            )
+            test_result = await self.run(
+                strategy_name=strategy_name,
+                symbol=symbol,
+                timeframe=timeframe,
+                start_date=test_start,
+                end_date=test_end,
+                initial_balance=initial_balance,
+                parameters=selected_parameters,
+                risk_per_trade_pct=risk_per_trade_pct,
+                max_drawdown_pct=max_drawdown_pct,
+                max_consecutive_losses=max_consecutive_losses,
+                spread_pct=spread_pct,
+                commission_rate=commission_rate,
+                slippage_rate=slippage_rate,
+                allow_synthetic_data=False,
+            )
+
+            windows.append({
+                "window": len(windows) + 1,
+                "train_period": {
+                    "start": str(train_start),
+                    "end": str(train_end),
+                    "candles": train_candles,
+                },
+                "test_period": {
+                    "start": str(test_start),
+                    "end": str(test_end),
+                    "candles": test_candles,
+                },
+                "selected_parameters": selected_parameters,
+                "training_metrics": self._compact_validation_metrics(
+                    selected_training
+                ),
+                "out_of_sample_metrics": self._compact_validation_metrics(
+                    test_result
+                ),
+            })
+            test_start_index += step
+
+        valid_tests = [
+            window["out_of_sample_metrics"] for window in windows
+            if "error" not in window["out_of_sample_metrics"]
+        ]
+        total_trades = sum(item.get("total_trades", 0) for item in valid_tests)
+        total_winners = sum(item.get("winning_trades", 0) for item in valid_tests)
+        gross_profit = sum(item.get("gross_profit", 0.0) for item in valid_tests)
+        gross_loss = sum(item.get("gross_loss", 0.0) for item in valid_tests)
+        net_pnl = sum(item.get("net_pnl", 0.0) for item in valid_tests)
+        positive_windows = sum(item.get("net_pnl", 0.0) > 0 for item in valid_tests)
+        profit_factor = (
+            gross_profit / gross_loss if gross_loss > 0 else
+            (float("inf") if gross_profit > 0 else 0.0)
+        )
+        positive_window_rate = (
+            positive_windows / len(valid_tests) * 100 if valid_tests else 0.0
+        )
+        max_drawdown = max(
+            (item.get("max_drawdown_pct", 0.0) for item in valid_tests),
+            default=0.0,
+        )
+
+        if len(valid_tests) < 3 or total_trades < 20:
+            status = "insufficient_evidence"
+        elif (
+            net_pnl > 0 and profit_factor >= 1.2 and
+            positive_window_rate >= 60 and max_drawdown <= 15
+        ):
+            status = "promising"
+        else:
+            status = "not_robust"
+
+        return {
+            "strategy": strategy_name,
+            "symbol": symbol,
+            "timeframe": timeframe,
+            "method": "rolling_walk_forward",
+            "train_candles": train_candles,
+            "test_candles": test_candles,
+            "step_candles": step,
+            "candidate_count": len(candidates),
+            "windows": windows,
+            "out_of_sample_summary": {
+                "window_count": len(valid_tests),
+                "positive_windows": positive_windows,
+                "positive_window_rate": round(positive_window_rate, 2),
+                "total_trades": total_trades,
+                "win_rate": round(
+                    total_winners / total_trades * 100, 2
+                ) if total_trades else 0.0,
+                "gross_profit": round(gross_profit, 2),
+                "gross_loss": round(gross_loss, 2),
+                "net_pnl": round(net_pnl, 2),
+                "profit_factor": round(profit_factor, 4),
+                "worst_window_drawdown_pct": round(max_drawdown, 2),
+                "validation_status": status,
+            },
+            "interpretation": (
+                "Parameter selection uses training data only; every reported "
+                "summary metric comes from the subsequent unseen test window."
+            ),
+            "selection_bias_warning": (
+                "Testing many candidates increases overfitting risk. Confirm "
+                "promising results on a final untouched holdout dataset."
+            ),
+        }
+
+    @staticmethod
+    def _walk_forward_score(
+        result: Dict[str, Any], min_train_trades: int
+    ) -> tuple:
+        """Rank parameter candidates using training data only."""
+        if not result or "error" in result:
+            return (False, False, float("-inf"), float("-inf"), float("-inf"))
+        trades = result.get("total_trades", 0)
+        profit_factor = result.get("profit_factor", 0.0)
+        if not np.isfinite(profit_factor):
+            profit_factor = 10.0
+        return (
+            trades >= min_train_trades,
+            result.get("net_pnl", 0.0) > 0,
+            min(float(profit_factor), 10.0),
+            float(result.get("sharpe_ratio", 0.0)),
+            -float(result.get("max_drawdown_pct", 0.0)),
+        )
+
+    @staticmethod
+    def _compact_validation_metrics(result: Dict[str, Any]) -> Dict[str, Any]:
+        """Keep walk-forward output focused and bounded in size."""
+        if not result or "error" in result:
+            return {"error": result.get("error", "Backtest failed") if result else "Backtest failed"}
+        keys = (
+            "total_trades", "winning_trades", "losing_trades", "win_rate",
+            "gross_profit", "gross_loss", "net_pnl", "profit_factor",
+            "sharpe_ratio", "sortino_ratio", "max_drawdown_pct",
+        )
+        return {key: result.get(key) for key in keys}
+
     # ──────────────────────────────────────────────────────────────────
     # Price simulation (spread, slippage, fill)
     # ──────────────────────────────────────────────────────────────────
