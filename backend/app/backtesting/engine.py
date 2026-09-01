@@ -306,9 +306,6 @@ class BacktestingEngine:
             # Track peak / drawdown
             if current_equity > float(risk_state.peak_equity):
                 risk_state.peak_equity = Decimal(str(current_equity))
-            dd = float(risk_state.peak_equity) - current_equity
-            if dd > float(risk_state.max_drawdown):
-                risk_state.max_drawdown = Decimal(str(dd))
 
         # ──────────────────────────────────────────────────────────────
         # Close any remaining position at last candle close
@@ -367,13 +364,15 @@ class BacktestingEngine:
 
         # Max drawdown percentage
         peak = initial_balance
+        max_dd_amount = 0.0
         max_dd_pct = 0.0
         for eq in equity_curve:
             if eq > peak:
                 peak = eq
-            dd = (peak - eq) / peak * 100 if peak > 0 else 0
-            if dd > max_dd_pct:
-                max_dd_pct = dd
+            dd_amount = peak - eq
+            dd = dd_amount / peak * 100 if peak > 0 else 0
+            max_dd_amount = max(max_dd_amount, dd_amount)
+            max_dd_pct = max(max_dd_pct, dd)
 
         # Average trade duration
         durations = []
@@ -435,7 +434,7 @@ class BacktestingEngine:
             "profit_factor": round(profit_factor, 4),
             "sharpe_ratio": round(float(sharpe), 4),
             "sortino_ratio": round(float(sortino), 4),
-            "max_drawdown": round(float(risk_state.max_drawdown), 2),
+            "max_drawdown": round(max_dd_amount, 2),
             "max_drawdown_pct": round(max_dd_pct, 2),
             "avg_trade_duration_min": round(float(avg_duration), 2),
             "max_consecutive_wins": max_consec_wins,
