@@ -241,8 +241,8 @@ class DeviceService:
 
             device.status = DeviceStatus.BLOCKED
             device.deactivated_at = datetime.now(timezone.utc)
-            device.metadata = {
-                **(device.metadata or {}),
+            device.metadata_json = {
+                **(device.metadata_json or {}),
                 "block_reason": reason,
                 "blocked_at": datetime.now(timezone.utc).isoformat(),
             }
