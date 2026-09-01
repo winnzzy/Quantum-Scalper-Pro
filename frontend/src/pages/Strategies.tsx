@@ -2,15 +2,18 @@ import React, { useState } from 'react';
 import { useQuery, useMutation } from 'react-query';
 import { strategyAPI } from '../services/api';
 import { toast } from 'react-hot-toast';
-import { Zap, Settings, Plus, Check } from 'lucide-react';
+import { Zap, Settings, Plus } from 'lucide-react';
+import { StrategyConfig, StrategyConfigRequest } from '../types/api';
+import { getApiErrorMessage } from '../utils/errors';
 
 const Strategies: React.FC = () => {
   const { data: strategies } = useQuery('strategy-list', () => strategyAPI.list());
   const { data: configs } = useQuery('strategy-configs', () => strategyAPI.getConfigs());
   const [selectedStrategy, setSelectedStrategy] = useState('');
   const [showConfig, setShowConfig] = useState(false);
-  const [configForm, setConfigForm] = useState({
+  const [configForm, setConfigForm] = useState<StrategyConfigRequest>({
     name: '',
+    strategy_type: 'ema_scalper',
     symbols: ['BTC/USDT'],
     timeframes: ['1m'],
     risk_per_trade: 0.5,
@@ -18,13 +21,14 @@ const Strategies: React.FC = () => {
   });
 
   const createMutation = useMutation(
-    (data: any) => strategyAPI.createConfig(data),
+    (data: StrategyConfigRequest) => strategyAPI.createConfig(data),
     {
       onSuccess: () => {
         toast.success('Strategy configured!');
         setShowConfig(false);
       },
-      onError: (error: any) => toast.error(error.response?.data?.detail || 'Failed'),
+      onError: (error: unknown) =>
+        toast.error(getApiErrorMessage(error, 'Failed to create strategy')),
     }
   );
 
@@ -86,7 +90,7 @@ const Strategies: React.FC = () => {
               </tr>
             </thead>
             <tbody>
-              {(configs?.data || []).map((config: any) => (
+              {(configs?.data || []).map((config: StrategyConfig) => (
                 <tr key={config.id} className="border-b border-gray-100">
                   <td className="py-3 px-4 font-medium">{config.name}</td>
                   <td className="py-3 px-4 capitalize">{config.strategy_type.replace('_', ' ')}</td>
@@ -123,7 +127,11 @@ const Strategies: React.FC = () => {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Strategy Type</label>
-                <select className="input">
+                <select
+                  className="input"
+                  value={configForm.strategy_type}
+                  onChange={(e) => setConfigForm({ ...configForm, strategy_type: e.target.value })}
+                >
                   {strategyList.map((s: string) => (
                     <option key={s} value={s}>{s.replace('_', ' ')}</option>
                   ))}

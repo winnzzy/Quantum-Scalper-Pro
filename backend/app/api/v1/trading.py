@@ -101,7 +101,12 @@ async def create_trade(
     result = await execution.execute_signal(
         signal,
         trade_data.broker_type,
-        {"strategy_type": "manual", "manual": True}
+        {
+            "strategy_type": "manual",
+            "manual": True,
+            "use_ai_filter": False,
+            "use_news_filter": True,
+        }
     )
 
     if not result["success"]:

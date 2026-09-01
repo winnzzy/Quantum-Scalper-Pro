@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { authAPI } from '../services/api';
 import { toast } from 'react-hot-toast';
 import { User, Mail, Lock, Eye, EyeOff } from 'lucide-react';
+import { getApiErrorMessage } from '../utils/errors';
 
 const Register: React.FC = () => {
   const [formData, setFormData] = useState({
@@ -32,8 +33,8 @@ const Register: React.FC = () => {
       });
       toast.success('Account created! Please login.');
       navigate('/login');
-    } catch (error: any) {
-      toast.error(error.response?.data?.detail || 'Registration failed');
+    } catch (error: unknown) {
+      toast.error(getApiErrorMessage(error, 'Registration failed'));
     } finally {
       setLoading(false);
     }

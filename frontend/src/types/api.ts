@@ -76,3 +76,55 @@ export interface RealtimeSnapshot {
   trades: RealtimeTrade[];
   notifications: RealtimeNotification[];
 }
+
+
+export interface AuthUser {
+  id: number;
+  email: string;
+  username: string;
+  role: 'admin' | 'trader' | 'viewer' | 'affiliate';
+  first_name?: string;
+  last_name?: string;
+}
+
+export interface RegisterRequest {
+  username: string;
+  email: string;
+  password: string;
+  first_name?: string;
+  last_name?: string;
+}
+
+export interface AuthTokens {
+  access_token: string;
+  refresh_token: string;
+  token_type: string;
+  expires_in: number;
+}
+
+export interface StrategyConfigRequest {
+  name: string;
+  strategy_type: string;
+  parameters: Record<string, number | string | boolean>;
+  symbols: string[];
+  timeframes: string[];
+  risk_per_trade: number;
+  is_active?: boolean;
+}
+
+export interface StrategyConfig extends StrategyConfigRequest {
+  id: number;
+  user_id: number;
+  is_active: boolean;
+}
+
+export interface RiskProfile {
+  risk_per_trade_percent: number;
+  daily_loss_limit_percent: number;
+  weekly_loss_limit_percent: number;
+  max_drawdown_percent: number;
+  max_consecutive_losses: number;
+  max_open_trades: number;
+  trading_paused: boolean;
+  pause_reason?: string;
+}

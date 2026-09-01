@@ -13,6 +13,7 @@ from app.models.trading import Trade, TradeStatus, TradeDirection, BrokerType
 from app.risk.engine import RiskManagementEngine
 from app.ai.filter import ai_filter
 from app.notifications.engine import NotificationEngine
+from app.engines.news import news_filter
 
 
 class ExecutionEngine:
@@ -56,7 +57,8 @@ class ExecutionEngine:
             "order_id": None,
             "message": "",
             "risk_check": None,
-            "ai_check": None
+            "ai_check": None,
+            "news_check": None
         }
 
         symbol = signal.symbol
@@ -73,11 +75,20 @@ class ExecutionEngine:
             market_data = await broker.get_market_data(symbol)
             spread = market_data.ask - market_data.bid
 
-            # 3. AI Filter
-            ai_result = ai_filter.evaluate(signal, {
-                "spread": spread,
-                "price": market_data.last
-            })
+            # 3. AI filter (strategies may explicitly opt out, e.g. manual orders).
+            if strategy_config.get("use_ai_filter", True):
+                ai_result = ai_filter.evaluate(signal, {
+                    "spread": spread,
+                    "price": market_data.last,
+                })
+            else:
+                ai_result = {
+                    "quality_score": 1.0,
+                    "confidence": float(signal.confidence),
+                    "recommendation": "pass",
+                    "reason": "AI filter disabled for this order",
+                    "features": {},
+                }
             result["ai_check"] = ai_result
 
             if ai_result["recommendation"] == "block":
@@ -85,7 +96,19 @@ class ExecutionEngine:
                 logger.info(f"Signal blocked by AI: {symbol} {direction}")
                 return result
 
-            # 4. Risk validation
+            # 4. Economic-calendar safety gate.
+            if strategy_config.get("use_news_filter", True):
+                news_result = news_filter.is_news_lock_active(symbol)
+            else:
+                news_result = {"active": False, "reason": "News filter disabled for strategy"}
+            result["news_check"] = news_result
+
+            if news_result["active"]:
+                result["message"] = f"News filter blocked: {news_result['reason']}"
+                logger.warning(f"Signal blocked by news filter: {symbol} {direction}")
+                return result
+
+            # 5. Risk validation
             # Calculate quantity (will be refined by risk engine)
             initial_quantity = Decimal("0.01")  # Placeholder, risk engine will calculate
 
@@ -106,7 +129,7 @@ class ExecutionEngine:
                 logger.warning(f"Trade blocked by risk: {symbol} {direction} - {risk_result['reason']}")
                 return result
 
-            # 5. Place order
+            # 6. Place order
             order_side = OrderSide.BUY if direction == "buy" else OrderSide.SELL
             order_type = OrderType.MARKET  # Default to market for scalping
 
@@ -125,7 +148,7 @@ class ExecutionEngine:
                 logger.error(f"Order execution failed: {order_result.error_message}")
                 return result
 
-            # 6. Record trade
+            # 7. Record trade
             trade = Trade(
                 user_id=self.user_id,
                 symbol=symbol,
@@ -151,7 +174,7 @@ class ExecutionEngine:
             await self.db.commit()
             await self.db.refresh(trade)
 
-            # 7. Send notification
+            # 8. Send notification
             await self.notification_engine.send_trade_notification(
                 self.user_id,
                 "trade_open",
