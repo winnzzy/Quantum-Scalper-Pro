@@ -5,6 +5,12 @@ import {
   CustomerSubscription,
   PortalResponse,
   SubscriptionPlan,
+  AuthTokens,
+  AuthUser,
+  RegisterRequest,
+  StrategyConfig,
+  StrategyConfigRequest,
+  RiskProfile,
 } from '../types/api';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
@@ -37,9 +43,9 @@ api.interceptors.response.use(
 
 export const authAPI = {
   login: (email: string, password: string) =>
-    api.post('/auth/login', { username: email, password }),
-  register: (data: any) => api.post('/auth/register', data),
-  me: () => api.get('/auth/me'),
+    api.post<AuthTokens>('/auth/login', { username: email, password }),
+  register: (data: RegisterRequest) => api.post<AuthUser>('/auth/register', data),
+  me: () => api.get<AuthUser>('/auth/me'),
 };
 
 export const tradingAPI = {
@@ -56,13 +62,14 @@ export const tradingAPI = {
 export const strategyAPI = {
   list: () => api.get('/strategies/list'),
   getInfo: (name: string) => api.get(`/strategies/${name}/info`),
-  getConfigs: () => api.get('/trading/strategies/configs'),
-  createConfig: (data: any) => api.post('/trading/strategies/configs', data),
+  getConfigs: () => api.get<StrategyConfig[]>('/trading/strategies/configs'),
+  createConfig: (data: StrategyConfigRequest) =>
+    api.post<StrategyConfig>('/trading/strategies/configs', data),
 };
 
 export const riskAPI = {
-  getProfile: () => api.get('/risk/profile'),
-  updateProfile: (data: any) => api.put('/risk/profile', data),
+  getProfile: () => api.get<RiskProfile>('/risk/profile'),
+  updateProfile: (data: Partial<RiskProfile>) => api.put<RiskProfile>('/risk/profile', data),
   pauseTrading: () => api.post('/risk/pause'),
   resumeTrading: () => api.post('/risk/resume'),
   getEvents: () => api.get('/risk/events'),
