@@ -62,12 +62,22 @@ async def _snapshot(user_id: int) -> dict:
 @router.websocket("/ws")
 async def realtime_updates(websocket: WebSocket):
     """Stream user-scoped snapshots; the access token is supplied by the browser."""
-    user = await _authenticate(websocket.query_params.get("token"))
+    protocols = [
+        value.strip()
+        for value in websocket.headers.get("sec-websocket-protocol", "").split(",")
+        if value.strip()
+    ]
+    bearer_protocol = next(
+        (value for value in protocols if value.startswith("bearer.")),
+        None,
+    )
+    token = bearer_protocol.removeprefix("bearer.") if bearer_protocol else None
+    user = await _authenticate(token)
     if user is None:
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Unauthorized")
         return
 
-    await websocket.accept()
+    await websocket.accept(subprotocol=bearer_protocol)
     logger.info(f"WebSocket connected for user {user.id}")
 
     try:
