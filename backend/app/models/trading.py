@@ -45,7 +45,7 @@ class Trade(Base):
         Index("idx_trade_user", "user_id"),
         Index("idx_trade_status", "status"),
         Index("idx_trade_symbol", "symbol"),
-        Index("idx_trade_opened", "opened_at"),
+        Index("idx_trade_opened", "entry_time"),
         Index("idx_trade_strategy", "strategy_name"),
         UniqueConstraint("broker", "broker_order_id", name="uq_trade_broker_order"),
     )
