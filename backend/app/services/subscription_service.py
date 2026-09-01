@@ -419,8 +419,8 @@ class SubscriptionService:
                 )
 
             # Store pending downgrade in metadata
-            current_sub.metadata = {
-                **(current_sub.metadata or {}),
+            current_sub.metadata_json = {
+                **(current_sub.metadata_json or {}),
                 "pending_downgrade_plan_id": new_plan_id,
                 "pending_downgrade_at": current_sub.current_period_end.isoformat() if current_sub.current_period_end else None,
             }
@@ -458,8 +458,8 @@ class SubscriptionService:
 
             if at_period_end:
                 subscription.cancel_at_period_end = True
-                subscription.metadata = {
-                    **(subscription.metadata or {}),
+                subscription.metadata_json = {
+                    **(subscription.metadata_json or {}),
                     "cancellation_reason": reason,
                     "cancellation_feedback": feedback,
                 }
