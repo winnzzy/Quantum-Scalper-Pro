@@ -4,7 +4,10 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Optional, List, Any
 
-import MetaTrader5 as mt5
+try:
+    import MetaTrader5 as mt5
+except ImportError:  # MetaTrader5 only publishes Windows wheels.
+    mt5 = None
 
 from app.brokers.base import (
     BaseBroker, BrokerConfig, OrderResult, AccountInfo,
@@ -22,6 +25,14 @@ class MT5Broker(BaseBroker):
 
     async def connect(self) -> bool:
         """Initialize MT5 connection."""
+        if mt5 is None:
+            self.last_error = (
+                "MetaTrader5 is unavailable on this platform. "
+                "Run the MT5 adapter on Windows or use paper/Binance trading."
+            )
+            logger.error(self.last_error)
+            return False
+
         try:
             loop = asyncio.get_event_loop()
 

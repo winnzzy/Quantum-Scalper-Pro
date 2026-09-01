@@ -25,7 +25,7 @@ lightgbm==4.2.0
 
 # Trading
 ccxt==4.2.18
-MetaTrader5==5.0.45
+MetaTrader5==5.0.45; platform_system == "Windows"
 
 # HTTP
 httpx==0.26.0
