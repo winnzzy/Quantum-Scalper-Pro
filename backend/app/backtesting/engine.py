@@ -180,7 +180,9 @@ class BacktestingEngine:
         # Main simulation loop
         # ──────────────────────────────────────────────────────────────
         for i in range(min_periods, len(df)):
-            window = df.iloc[:i + 1]
+            # The strategy sees completed candles only (through i - 1). Any
+            # resulting order is filled at candle i's open.
+            window = df.iloc[:i]
             candle = df.iloc[i]
             candle_time = candle.get("timestamp")
             candle_close = Decimal(str(candle["close"]))
@@ -189,42 +191,22 @@ class BacktestingEngine:
             candle_open = Decimal(str(candle["open"]))
             self._roll_risk_day(risk_state, candle_time)
 
-            # ── 1. Check stop-loss / take-profit hits on current candle ──
-            if position:
-                sl_tp_trade = self._check_sl_tp(
-                    position, candle_high, candle_low, candle_close,
-                    spread, comm, slip, candle_time, symbol
-                )
-                if sl_tp_trade:
-                    trades.append(sl_tp_trade)
-                    cost_log["total_commission"] += sl_tp_trade.commission
-                    cost_log["total_slippage"] += sl_tp_trade.slippage_cost
-                    cost_log["total_spread"] += sl_tp_trade.spread_cost
-                    risk_state.balance += sl_tp_trade.net_pnl
-                    self._update_risk_state(risk_state, sl_tp_trade.net_pnl)
-                    position = None
-
-                    # Check if risk limits breached after trade
-                    if risk_state.trading_paused:
-                        logger.warning(f"Backtest paused: {risk_state.pause_reason}")
-                        break
-
-            # ── 2. Run strategy analysis ──
+            # ── 1. Generate signal from completed history ──
             result = await strategy.analyze(symbol, window)
-
+            signal = None
             if result and result.signal.type.value in ["buy", "sell"]:
                 signal = result.signal
 
-                # ── 3. Handle existing position reversal ──
+            # ── 2. Execute reversal/new entry at the next candle open ──
+            if signal:
                 if position:
                     is_reverse = (
                         (signal.type.value == "buy" and position.side == "sell") or
                         (signal.type.value == "sell" and position.side == "buy")
                     )
                     if is_reverse:
-                        # Close at the raw signal price; _close_position applies costs once.
                         trade = self._close_position(
-                            position, signal.price, candle_time, "signal_reversal",
+                            position, candle_open, candle_time, "signal_reversal",
                             comm, slip, spread
                         )
                         trades.append(trade)
@@ -239,71 +221,99 @@ class BacktestingEngine:
                             logger.warning(f"Backtest paused: {risk_state.pause_reason}")
                             break
 
-                # ── 4. Open new position (if flat) ──
-                if position is None:
-                    if risk_state.daily_locked:
-                        continue
-
-                    # Risk check: mandatory stop loss
+                if position is None and not risk_state.daily_locked:
                     if self.mandatory_stop_loss and signal.stop_loss is None:
-                        continue  # Skip signal
-
-                    # Risk check: consecutive losses
-                    if risk_state.consecutive_losses >= max_consec:
-                        continue
-
-                    # Risk check: drawdown
-                    if risk_state.current_drawdown >= dd_pct:
+                        signal = None
+                    elif risk_state.consecutive_losses >= max_consec:
+                        signal = None
+                    elif risk_state.current_drawdown >= dd_pct:
                         risk_state.trading_paused = True
-                        risk_state.pause_reason = f"Max drawdown {risk_state.current_drawdown}%"
+                        risk_state.pause_reason = (
+                            f"Max drawdown {risk_state.current_drawdown}%"
+                        )
                         break
 
-                    # Position sizing (mirrors RiskManagementEngine._calculate_position_size)
-                    quantity = self._calculate_position_size(
-                        risk_state.balance, signal.price, signal.stop_loss,
-                        risk_pct, signal.type.value
+                if signal and position is None and not risk_state.daily_locked:
+                    # Reject stops invalidated by an opening gap. Treating such a
+                    # stop as valid would silently exceed the configured risk.
+                    stop_is_valid = (
+                        signal.stop_loss is None or
+                        (
+                            signal.type.value == "buy" and
+                            signal.stop_loss < candle_open
+                        ) or
+                        (
+                            signal.type.value == "sell" and
+                            signal.stop_loss > candle_open
+                        )
                     )
+                    if stop_is_valid:
+                        quantity = self._calculate_position_size(
+                            risk_state.balance, candle_open, signal.stop_loss,
+                            risk_pct, signal.type.value
+                        )
 
-                    if quantity <= Decimal("0"):
-                        continue
+                        if quantity > Decimal("0"):
+                            fill_price = self._apply_fill_price(
+                                candle_open, signal.type.value, spread, slip
+                            )
+                            notional = fill_price * quantity
+                            entry_commission = (
+                                notional * comm
+                            ).quantize(Decimal("0.01"))
+                            entry_slippage_cost = candle_open * slip * quantity
+                            entry_spread_cost = (
+                                candle_open * spread / 2 * quantity
+                            )
 
-                    # Apply fill price with spread + slippage
-                    fill_price = self._apply_fill_price(
-                        signal.price, signal.type.value, spread, slip
-                    )
+                            position = BacktestPosition(
+                                symbol=symbol,
+                                side=signal.type.value,
+                                entry_price=fill_price,
+                                entry_reference_price=candle_open,
+                                quantity=quantity,
+                                stop_loss=signal.stop_loss,
+                                take_profit=signal.take_profit,
+                                entry_time=candle_time,
+                                entry_commission=entry_commission,
+                                entry_slippage_cost=entry_slippage_cost,
+                                entry_spread_cost=entry_spread_cost,
+                            )
 
-                    # Calculate entry costs
-                    notional = fill_price * quantity
-                    entry_commission = (notional * comm).quantize(Decimal("0.01"))
-                    entry_slippage_cost = signal.price * slip * quantity
-                    entry_spread_cost = signal.price * spread / 2 * quantity  # Half spread at entry
+            # ── 3. Process the current candle after open-time execution ──
+            if position:
+                sl_tp_trade = self._check_sl_tp(
+                    position, candle_open, candle_high, candle_low,
+                    spread, comm, slip, candle_time, symbol
+                )
+                if sl_tp_trade:
+                    trades.append(sl_tp_trade)
+                    cost_log["total_commission"] += sl_tp_trade.commission
+                    cost_log["total_slippage"] += sl_tp_trade.slippage_cost
+                    cost_log["total_spread"] += sl_tp_trade.spread_cost
+                    risk_state.balance += sl_tp_trade.net_pnl
+                    self._update_risk_state(risk_state, sl_tp_trade.net_pnl)
+                    position = None
 
-                    position = BacktestPosition(
-                        symbol=symbol,
-                        side=signal.type.value,
-                        entry_price=fill_price,
-                        entry_reference_price=signal.price,
-                        quantity=quantity,
-                        stop_loss=signal.stop_loss,
-                        take_profit=signal.take_profit,
-                        entry_time=candle_time,
-                        entry_commission=entry_commission,
-                        entry_slippage_cost=entry_slippage_cost,
-                        entry_spread_cost=entry_spread_cost,
-                    )
+                    if risk_state.trading_paused:
+                        logger.warning(f"Backtest paused: {risk_state.pause_reason}")
+                        break
 
-            # ── 5. Update equity curve ──
+            # ── 4. Update equity curve at candle close ──
             unrealized_pnl = Decimal("0")
             if position:
                 if position.side == "buy":
-                    unrealized_pnl = (candle_close - position.entry_price) * position.quantity
+                    unrealized_pnl = (
+                        candle_close - position.entry_price
+                    ) * position.quantity
                 else:
-                    unrealized_pnl = (position.entry_price - candle_close) * position.quantity
+                    unrealized_pnl = (
+                        position.entry_price - candle_close
+                    ) * position.quantity
 
             current_equity = float(risk_state.balance + unrealized_pnl)
             equity_curve.append(current_equity)
 
-            # Track peak / drawdown
             if current_equity > float(risk_state.peak_equity):
                 risk_state.peak_equity = Decimal(str(current_equity))
 
@@ -462,6 +472,15 @@ class BacktestingEngine:
                 "final_balance": round(float(risk_state.balance), 2),
                 "peak_equity": round(float(risk_state.peak_equity), 2),
             },
+            "execution_model": {
+                "signal_timing": "completed_candle",
+                "entry_timing": "next_candle_open",
+                "gap_aware_exits": True,
+                "ambiguous_intrabar_policy": "stop_loss_first",
+                "ambiguous_exit_count": sum(
+                    t.exit_reason == "ambiguous_stop_loss" for t in trades
+                ),
+            },
             "parameters": parameters or {},
             "symbol": symbol,
             "timeframe": timeframe,
@@ -539,66 +558,71 @@ class BacktestingEngine:
     def _check_sl_tp(
         self,
         position: BacktestPosition,
+        candle_open: Decimal,
         candle_high: Decimal,
         candle_low: Decimal,
-        candle_close: Decimal,
         spread: Decimal,
         commission_rate: Decimal,
         slippage_rate: Decimal,
         candle_time: Optional[datetime],
         symbol: str,
     ) -> Optional[BacktestTrade]:
-        """Check if stop-loss or take-profit was hit during this candle."""
-        if position.stop_loss and position.take_profit:
-            # Determine which was hit first using open price as proxy
-            if position.side == "buy":
-                # For long: check if low hit SL first or high hit TP first
-                if candle_low <= position.stop_loss:
-                    return self._close_position(
-                        position, position.stop_loss, candle_time, "stop_loss",
-                        commission_rate, slippage_rate, spread
-                    )
-                if candle_high >= position.take_profit:
-                    return self._close_position(
-                        position, position.take_profit, candle_time, "take_profit",
-                        commission_rate, slippage_rate, spread
-                    )
-            else:  # sell
-                if candle_high >= position.stop_loss:
-                    return self._close_position(
-                        position, position.stop_loss, candle_time, "stop_loss",
-                        commission_rate, slippage_rate, spread
-                    )
-                if candle_low <= position.take_profit:
-                    return self._close_position(
-                        position, position.take_profit, candle_time, "take_profit",
-                        commission_rate, slippage_rate, spread
-                    )
+        """Resolve stop-loss/take-profit using gap-aware conservative fills."""
+        stop_hit = False
+        target_hit = False
 
-        elif position.stop_loss:
-            if position.side == "buy" and candle_low <= position.stop_loss:
+        if position.side == "buy":
+            if position.stop_loss is not None and candle_open <= position.stop_loss:
                 return self._close_position(
-                    position, position.stop_loss, candle_time, "stop_loss",
+                    position, candle_open, candle_time, "stop_loss_gap",
                     commission_rate, slippage_rate, spread
                 )
-            elif position.side == "sell" and candle_high >= position.stop_loss:
+            if position.take_profit is not None and candle_open >= position.take_profit:
                 return self._close_position(
-                    position, position.stop_loss, candle_time, "stop_loss",
+                    position, candle_open, candle_time, "take_profit_gap",
                     commission_rate, slippage_rate, spread
                 )
+            stop_hit = (
+                position.stop_loss is not None and
+                candle_low <= position.stop_loss
+            )
+            target_hit = (
+                position.take_profit is not None and
+                candle_high >= position.take_profit
+            )
+        else:
+            if position.stop_loss is not None and candle_open >= position.stop_loss:
+                return self._close_position(
+                    position, candle_open, candle_time, "stop_loss_gap",
+                    commission_rate, slippage_rate, spread
+                )
+            if position.take_profit is not None and candle_open <= position.take_profit:
+                return self._close_position(
+                    position, candle_open, candle_time, "take_profit_gap",
+                    commission_rate, slippage_rate, spread
+                )
+            stop_hit = (
+                position.stop_loss is not None and
+                candle_high >= position.stop_loss
+            )
+            target_hit = (
+                position.take_profit is not None and
+                candle_low <= position.take_profit
+            )
 
-        elif position.take_profit:
-            if position.side == "buy" and candle_high >= position.take_profit:
-                return self._close_position(
-                    position, position.take_profit, candle_time, "take_profit",
-                    commission_rate, slippage_rate, spread
-                )
-            elif position.side == "sell" and candle_low <= position.take_profit:
-                return self._close_position(
-                    position, position.take_profit, candle_time, "take_profit",
-                    commission_rate, slippage_rate, spread
-                )
-
+        # OHLC bars do not reveal intrabar ordering. If both levels appear
+        # touched, use the adverse outcome rather than an optimistic target.
+        if stop_hit:
+            reason = "ambiguous_stop_loss" if target_hit else "stop_loss"
+            return self._close_position(
+                position, position.stop_loss, candle_time, reason,
+                commission_rate, slippage_rate, spread
+            )
+        if target_hit:
+            return self._close_position(
+                position, position.take_profit, candle_time, "take_profit",
+                commission_rate, slippage_rate, spread
+            )
         return None
 
     # ──────────────────────────────────────────────────────────────────
