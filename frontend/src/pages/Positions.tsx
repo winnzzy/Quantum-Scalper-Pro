@@ -65,7 +65,7 @@ const Positions: React.FC = () => {
                     <td className={`py-3 px-4 font-medium ${
                       (position.unrealized_pnl || position.net_pnl || 0) >= 0 ? 'text-success' : 'text-danger'
                     }`}>
-                      {(position.unrealized_pnl || position.net_pnl || 0).toFixed(2)}
+                      {Number(position.unrealized_pnl || position.net_pnl || 0).toFixed(2)}
                     </td>
                     <td className="py-3 px-4 text-sm">
                       <div>SL: {position.stop_loss || '-'}</div>
