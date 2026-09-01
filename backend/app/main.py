@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from prometheus_client import make_asgi_app
 
 from app.core.config import settings
-from app.core.database import engine, Base
+from app.core.database import engine
 from app.core.logging import logger
 from app.core.redis import redis_client
 from app.api import api_router
@@ -20,10 +20,6 @@ async def lifespan(app: FastAPI):
     """Application lifespan manager."""
     # Startup
     logger.info(f"Starting {settings.APP_NAME} v{settings.VERSION}")
-
-    # Create database tables
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
 
     # Connect Redis
     await redis_client.connect()
