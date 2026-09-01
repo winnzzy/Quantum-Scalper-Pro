@@ -75,6 +75,9 @@ class Settings(BaseSettings):
     # News Filter
     NEWS_FILTER_ENABLED: bool = True
     NEWS_API_KEY: str | None = None
+    NEWS_API_URL: str = "https://finnhub.io/api/v1/calendar/economic"
+    NEWS_FAIL_CLOSED: bool = True
+    NEWS_MAX_STALENESS_MINUTES: int = 90
     HIGH_IMPACT_EVENTS: list[str] = Field(default=["NFP", "CPI", "FOMC", "Interest Rate", "GDP", "Unemployment"])
     NEWS_BUFFER_MINUTES: int = 30
 
