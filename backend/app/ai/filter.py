@@ -65,13 +65,16 @@ class AIFilterEngine:
     def _extract_features(self, signal: Signal, market_data: Dict[str, Any]) -> np.ndarray:
         """Extract features from signal and market data."""
         indicators = signal.indicators
+        price = price
+        if not np.isfinite(price) or price <= 0:
+            raise ValueError("Signal price must be a positive finite number")
 
         features = [
             # Volatility (ATR as % of price)
-            float(indicators.get("atr", 0)) / float(signal.price) * 100,
+            float(indicators.get("atr", 0)) / price * 100,
 
             # Spread
-            float(market_data.get("spread", 0)) / float(signal.price) * 100,
+            float(market_data.get("spread", 0)) / price * 100,
 
             # Indicator strength
             signal.confidence,
@@ -86,13 +89,13 @@ class AIFilterEngine:
             datetime.now(timezone.utc).weekday() / 7.0,
 
             # Price distance from key levels
-            float(indicators.get("ema_fast", 0)) / float(signal.price) - 1 if "ema_fast" in indicators else 0,
+            float(indicators.get("ema_fast", 0)) / price - 1 if "ema_fast" in indicators else 0,
 
             # RSI distance from extremes
             abs(50 - float(indicators.get("rsi", 50))) / 50 if "rsi" in indicators else 0,
 
             # Bollinger position
-            float(indicators.get("bb_upper", 0)) / float(signal.price) - 1 if "bb_upper" in indicators else 0,
+            float(indicators.get("bb_upper", 0)) / price - 1 if "bb_upper" in indicators else 0,
 
             # Trend strength
             1.0 if indicators.get("trend") == "bullish" and signal.type.value == "buy" else 
@@ -186,15 +189,19 @@ class AIFilterEngine:
         """Calculate rule-based quality score."""
         score = 0.5  # Base score
 
+        price = float(signal.price)
+        if not np.isfinite(price) or price <= 0:
+            return 0.0
+
         # Spread check
-        spread_pct = float(market_data.get("spread", 0)) / float(signal.price) * 100
+        spread_pct = float(market_data.get("spread", 0)) / price * 100
         if spread_pct > 0.05:  # > 0.05% spread
             score -= 0.3
         elif spread_pct < 0.01:
             score += 0.1
 
         # Volatility check
-        atr_pct = float(signal.indicators.get("atr", 0)) / float(signal.price) * 100
+        atr_pct = float(signal.indicators.get("atr", 0)) / price * 100
         if atr_pct < 0.02:  # Too low volatility
             score -= 0.2
         elif 0.05 <= atr_pct <= 0.3:  # Good volatility range
