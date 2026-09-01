@@ -21,6 +21,10 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info(f"Starting {settings.APP_NAME} v{settings.VERSION}")
 
+    # Ensure the customer-facing plan catalog exists.
+    from app.services.subscription_service import subscription_service
+    await subscription_service.seed_default_plans()
+
     # Connect Redis
     await redis_client.connect()
 
