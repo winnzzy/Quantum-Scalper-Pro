@@ -65,7 +65,7 @@ class AIFilterEngine:
     def _extract_features(self, signal: Signal, market_data: Dict[str, Any]) -> np.ndarray:
         """Extract features from signal and market data."""
         indicators = signal.indicators
-        price = price
+        price = float(signal.price)
         if not np.isfinite(price) or price <= 0:
             raise ValueError("Signal price must be a positive finite number")
 
