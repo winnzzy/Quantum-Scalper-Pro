@@ -43,6 +43,20 @@ jobs:
         cd backend
         pip install -r requirements.txt
 
+    - name: Check Python syntax
+      run: |
+        cd backend
+        python -m compileall -q app migrations
+
+    - name: Run database migrations
+      run: |
+        cd backend
+        alembic upgrade head
+      env:
+        DATABASE_URL: postgresql+asyncpg://qsp_admin:testpass@localhost:5432/qsp_test
+        REDIS_URL: redis://localhost:6379/0
+        SECRET_KEY: test-secret-key-for-ci-only-32chars
+
     - name: Run tests
       run: |
         cd backend
