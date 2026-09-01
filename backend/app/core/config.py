@@ -83,6 +83,11 @@ class Settings(BaseSettings):
     DEFAULT_COMMISSION: float = 0.0004  # 0.04%
     DEFAULT_SLIPPAGE: float = 0.0001
 
+    # Billing
+    STRIPE_SECRET_KEY: str | None = None
+    STRIPE_WEBHOOK_SECRET: str | None = None
+    FRONTEND_URL: str = "http://localhost:3000"
+
     # Licensing
     LICENSE_SERVER_URL: str | None = None
     LICENSE_CHECK_INTERVAL_HOURS: int = 24
