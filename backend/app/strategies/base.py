@@ -73,6 +73,47 @@ class BaseStrategy(ABC):
         atr = tr.rolling(window=period).mean()
         return atr
 
+    def calculate_adx(self, df: pd.DataFrame, period: int = 14) -> pd.Series:
+        """Calculate Wilder's ADX trend-strength indicator."""
+        high = pd.to_numeric(df["high"], errors="coerce")
+        low = pd.to_numeric(df["low"], errors="coerce")
+        close = pd.to_numeric(df["close"], errors="coerce")
+
+        up_move = high.diff()
+        down_move = -low.diff()
+        plus_dm = pd.Series(
+            np.where((up_move > down_move) & (up_move > 0), up_move, 0.0),
+            index=df.index,
+        )
+        minus_dm = pd.Series(
+            np.where((down_move > up_move) & (down_move > 0), down_move, 0.0),
+            index=df.index,
+        )
+
+        true_range = pd.concat(
+            [
+                high - low,
+                (high - close.shift()).abs(),
+                (low - close.shift()).abs(),
+            ],
+            axis=1,
+        ).max(axis=1)
+        alpha = 1 / period
+        smoothed_tr = true_range.ewm(
+            alpha=alpha, adjust=False, min_periods=period
+        ).mean()
+        plus_di = 100 * plus_dm.ewm(
+            alpha=alpha, adjust=False, min_periods=period
+        ).mean() / smoothed_tr.replace(0, np.nan)
+        minus_di = 100 * minus_dm.ewm(
+            alpha=alpha, adjust=False, min_periods=period
+        ).mean() / smoothed_tr.replace(0, np.nan)
+        directional_sum = (plus_di + minus_di).replace(0, np.nan)
+        dx = 100 * (plus_di - minus_di).abs() / directional_sum
+        return dx.ewm(
+            alpha=alpha, adjust=False, min_periods=period
+        ).mean().clip(lower=0, upper=100)
+
     def calculate_ema(self, series: pd.Series, period: int) -> pd.Series:
         """Calculate Exponential Moving Average."""
         return series.ewm(span=period, adjust=False).mean()
