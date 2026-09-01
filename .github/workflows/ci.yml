@@ -57,6 +57,38 @@ jobs:
         REDIS_URL: redis://localhost:6379/0
         SECRET_KEY: test-secret-key-for-ci-only-32chars
 
+    - name: Verify migrated schema
+      run: |
+        cd backend
+        python - <<'PY'
+        import asyncio
+        from sqlalchemy import inspect
+        from app.core.database import engine
+
+        EXPECTED_TABLES = {
+            "users", "trades", "positions", "orders", "strategy_configs",
+            "risk_profiles", "risk_events", "trade_journals",
+            "performance_reports", "licenses", "license_usage",
+            "audit_logs", "system_health", "notifications",
+        }
+
+        async def verify():
+            async with engine.connect() as connection:
+                tables = set(await connection.run_sync(
+                    lambda sync_connection: inspect(sync_connection).get_table_names()
+                ))
+            missing = EXPECTED_TABLES - tables
+            if missing:
+                raise SystemExit(f"Migration did not create tables: {sorted(missing)}")
+            await engine.dispose()
+
+        asyncio.run(verify())
+        PY
+      env:
+        DATABASE_URL: postgresql+asyncpg://qsp_admin:testpass@localhost:5432/qsp_test
+        REDIS_URL: redis://localhost:6379/0
+        SECRET_KEY: test-secret-key-for-ci-only-32chars
+
     - name: Run tests
       run: |
         cd backend
