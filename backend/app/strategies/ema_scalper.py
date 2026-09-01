@@ -35,6 +35,8 @@ class EMAScalper(BaseStrategy):
             "atr_multiplier_tp": 2.5,
             "min_atr": 0.0005,  # Minimum ATR as % of price
             "trend_filter": True,
+            "adx_period": 14,
+            "min_adx": 20.0,
         }
         if config:
             default_config.update(config)
@@ -57,6 +59,7 @@ class EMAScalper(BaseStrategy):
         df["ema_medium"] = self.calculate_ema(df["close"], ema_medium)
         df["ema_slow"] = self.calculate_ema(df["close"], ema_slow)
         df["atr"] = self.calculate_atr(df, atr_period)
+        df["adx"] = self.calculate_adx(df, self.config["adx_period"])
 
         # Get latest values
         latest = df.iloc[-1]
@@ -64,6 +67,11 @@ class EMAScalper(BaseStrategy):
 
         price = Decimal(str(latest["close"]))
         atr = Decimal(str(latest["atr"]))
+        adx = latest["adx"]
+
+        # Require both tradable volatility and a directional market regime.
+        if pd.isna(adx) or adx < self.config["min_adx"]:
+            return None
 
         # Minimum ATR check
         min_atr_pct = Decimal(str(self.config["min_atr"]))
@@ -98,6 +106,7 @@ class EMAScalper(BaseStrategy):
                     "ema_medium": float(latest["ema_medium"]),
                     "ema_slow": float(latest["ema_slow"]),
                     "atr": float(latest["atr"]),
+                    "adx": float(adx),
                     "trend": "bullish"
                 },
                 stop_loss=sl,
@@ -123,6 +132,7 @@ class EMAScalper(BaseStrategy):
                     "ema_medium": float(latest["ema_medium"]),
                     "ema_slow": float(latest["ema_slow"]),
                     "atr": float(latest["atr"]),
+                    "adx": float(adx),
                     "trend": "bearish"
                 },
                 stop_loss=sl,
@@ -136,13 +146,18 @@ class EMAScalper(BaseStrategy):
             return StrategyResult(
                 signal=signal,
                 raw_data=df,
-                metrics={"confidence": confidence, "atr": float(atr)}
+                metrics={
+                    "confidence": confidence,
+                    "atr": float(atr),
+                    "adx": float(adx),
+                    "market_regime": "trending",
+                }
             )
 
         return None
 
     def get_required_indicators(self) -> list:
-        return ["ema", "atr"]
+        return ["ema", "atr", "adx"]
 
     def _calculate_confidence(self, df: pd.DataFrame, direction: str) -> float:
         """Calculate signal confidence score (0-1)."""

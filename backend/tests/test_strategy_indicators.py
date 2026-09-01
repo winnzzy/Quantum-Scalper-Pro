@@ -43,3 +43,23 @@ def test_vwap_handles_zero_volume_without_nan_or_infinity():
 
     assert list(vwap) == pytest.approx([100.0, 101.0])
     assert vwap.notna().all()
+
+
+def test_adx_identifies_strong_directional_regime():
+    start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    closes = [100.0 + index for index in range(80)]
+    df = pd.DataFrame({
+        "timestamp": [
+            start + timedelta(minutes=index) for index in range(len(closes))
+        ],
+        "open": [price - 0.25 for price in closes],
+        "high": [price + 0.5 for price in closes],
+        "low": [price - 0.5 for price in closes],
+        "close": closes,
+        "volume": [1000.0] * len(closes),
+    })
+
+    adx = VWAPScalper().calculate_adx(df, period=14)
+
+    assert adx.iloc[-1] > 25
+    assert 0 <= adx.iloc[-1] <= 100
