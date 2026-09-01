@@ -1,6 +1,7 @@
 import React from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
+import { useRealtime } from '../hooks/useRealtime';
 import {
   LayoutDashboard,
   TrendingUp,
@@ -17,6 +18,7 @@ import {
 const Layout: React.FC = () => {
   const navigate = useNavigate();
   const { logout, user } = useAuthStore();
+  const { isConnected } = useRealtime();
 
   const handleLogout = () => {
     logout();
@@ -67,6 +69,10 @@ const Layout: React.FC = () => {
         </nav>
 
         <div className="p-4 border-t border-gray-200">
+          <div className="mb-3 flex items-center text-xs text-gray-500">
+            <span className={`mr-2 h-2 w-2 rounded-full ${isConnected ? 'bg-success' : 'bg-warning'}`} />
+            {isConnected ? 'Live updates connected' : 'Reconnecting live updates'}
+          </div>
           <div className="flex items-center mb-4">
             <div className="w-8 h-8 rounded-full bg-primary-100 flex items-center justify-center text-primary-700 font-semibold text-sm">
               {user?.email?.[0]?.toUpperCase() || 'U'}

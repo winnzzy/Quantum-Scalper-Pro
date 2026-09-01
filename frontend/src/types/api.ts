@@ -36,3 +36,43 @@ export interface CheckoutResponse {
 export interface PortalResponse {
   portal_url: string;
 }
+
+
+export interface RealtimePosition {
+  id: number;
+  symbol: string;
+  direction: 'buy' | 'sell';
+  quantity: number | string;
+  average_entry_price?: number | string;
+  current_price?: number | string;
+  unrealized_pnl?: number | string;
+  stop_loss?: number | string;
+  take_profit?: number | string;
+}
+
+export interface RealtimeTrade {
+  id: number;
+  symbol: string;
+  direction: 'buy' | 'sell';
+  quantity?: number | string;
+  entry_price?: number | string;
+  net_pnl?: number | string;
+  stop_loss?: number | string;
+  take_profit?: number | string;
+}
+
+export interface RealtimeNotification {
+  id: number;
+  type: string;
+  title: string;
+  message: string;
+  priority: string;
+  created_at: string;
+}
+
+export interface RealtimeSnapshot {
+  type: 'snapshot';
+  positions: RealtimePosition[];
+  trades: RealtimeTrade[];
+  notifications: RealtimeNotification[];
+}

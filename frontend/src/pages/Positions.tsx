@@ -5,13 +5,8 @@ import { toast } from 'react-hot-toast';
 import { X, TrendingUp, TrendingDown, Clock } from 'lucide-react';
 
 const Positions: React.FC = () => {
-  const { data: positions, refetch } = useQuery('positions', () => tradingAPI.getPositions(), {
-    refetchInterval: 5000,
-  });
-
-  const { data: trades } = useQuery('trades', () => tradingAPI.getTrades('open'), {
-    refetchInterval: 5000,
-  });
+  const { data: positions, refetch } = useQuery('positions', () => tradingAPI.getPositions());
+  const { data: trades } = useQuery('trades', () => tradingAPI.getTrades('open'));
 
   const closeMutation = useMutation(
     (tradeId: number) => tradingAPI.closeTrade(tradeId),
@@ -70,7 +65,7 @@ const Positions: React.FC = () => {
                     <td className={`py-3 px-4 font-medium ${
                       (position.unrealized_pnl || position.net_pnl || 0) >= 0 ? 'text-success' : 'text-danger'
                     }`}>
-                      {(position.unrealized_pnl || position.net_pnl || 0).toFixed(2)}
+                      {Number(position.unrealized_pnl || position.net_pnl || 0).toFixed(2)}
                     </td>
                     <td className="py-3 px-4 text-sm">
                       <div>SL: {position.stop_loss || '-'}</div>
