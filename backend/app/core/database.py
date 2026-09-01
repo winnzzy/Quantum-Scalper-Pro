@@ -30,6 +30,9 @@ AsyncSessionLocal = async_sessionmaker(
     autoflush=False,
 )
 
+# Backwards-compatible session factory used by the billing and device services.
+async_session = AsyncSessionLocal
+
 # Base class for models
 Base = declarative_base()
 
