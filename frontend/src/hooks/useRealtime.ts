@@ -5,7 +5,7 @@ import { useAuthStore } from '../store/authStore';
 import { RealtimeSnapshot } from '../types/api';
 
 
-const WS_URL = process.env.REACT_APP_WS_URL || 'ws://localhost:8000/ws';
+const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8000/ws';
 const MAX_BACKOFF_MS = 30_000;
 
 export const useRealtime = () => {
