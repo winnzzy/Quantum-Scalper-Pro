@@ -1,4 +1,6 @@
 """Security utilities for authentication and encryption."""
+import base64
+import hashlib
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -12,9 +14,15 @@ from app.core.logging import logger
 # Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-# Encryption
-_fernet_key = Fernet.generate_key() if len(settings.SECRET_KEY) < 32 else settings.SECRET_KEY[:32].encode()
-fernet = Fernet(_fernet_key)
+def _derive_fernet_key(secret: str) -> bytes:
+    """Derive a stable, valid Fernet key from the application secret."""
+    digest = hashlib.sha256(secret.encode("utf-8")).digest()
+    return base64.urlsafe_b64encode(digest)
+
+
+# Encryption keys must remain deterministic across process restarts; otherwise
+# previously encrypted broker credentials become permanently unreadable.
+fernet = Fernet(_derive_fernet_key(settings.SECRET_KEY))
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
