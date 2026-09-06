@@ -1,12 +1,14 @@
 """Quantum Scalper Pro - Core Configuration"""
 import os
 from functools import lru_cache
-from pydantic_settings import BaseSettings
-from pydantic import Field, validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field, field_validator
 
 
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
+
+    model_config = SettingsConfigDict(env_file=".env", case_sensitive=True)
 
     # Application
     APP_NAME: str = "Quantum Scalper Pro"
@@ -111,16 +113,12 @@ class Settings(BaseSettings):
     LOGS_DIR: str = "./logs"
     BACKUPS_DIR: str = "./backups"
 
-    @validator("SECRET_KEY")
+    @field_validator("SECRET_KEY")
+    @classmethod
     def validate_secret_key(cls, v):
         if len(v) < 32 and os.getenv("ENVIRONMENT") == "production":
             raise ValueError("SECRET_KEY must be at least 32 characters in production")
         return v
-
-    class Config:
-        env_file = ".env"
-        case_sensitive = True
-
 
 @lru_cache()
 def get_settings() -> Settings:
