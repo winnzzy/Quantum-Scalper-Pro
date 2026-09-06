@@ -3,6 +3,7 @@ import { useQuery, useMutation } from 'react-query';
 import { riskAPI } from '../services/api';
 import { toast } from 'react-hot-toast';
 import { Shield, AlertTriangle, Pause, Play, Lock } from 'lucide-react';
+import { RiskProfile } from '../types/api';
 
 const RiskCenter: React.FC = () => {
   const { data: profile, refetch } = useQuery('risk-profile', () => riskAPI.getProfile());
@@ -22,7 +23,7 @@ const RiskCenter: React.FC = () => {
     },
   });
 
-  const p = profile?.data || {};
+  const p: Partial<RiskProfile> = profile?.data || {};
   const isPaused = p.trading_paused;
 
   return (

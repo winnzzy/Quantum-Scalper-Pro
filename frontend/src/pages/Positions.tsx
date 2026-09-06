@@ -2,7 +2,8 @@ import React from 'react';
 import { useQuery, useMutation } from 'react-query';
 import { tradingAPI } from '../services/api';
 import { toast } from 'react-hot-toast';
-import { X, TrendingUp, TrendingDown, Clock } from 'lucide-react';
+import { X, TrendingUp, TrendingDown } from 'lucide-react';
+import { getApiErrorMessage } from '../utils/errors';
 
 const Positions: React.FC = () => {
   const { data: positions, refetch } = useQuery('positions', () => tradingAPI.getPositions());
@@ -15,7 +16,9 @@ const Positions: React.FC = () => {
         toast.success('Position closed!');
         refetch();
       },
-      onError: (error: any) => toast.error(error.response?.data?.detail || 'Close failed'),
+      onError: (error: unknown) => {
+        toast.error(getApiErrorMessage(error, 'Close failed'));
+      },
     }
   );
 

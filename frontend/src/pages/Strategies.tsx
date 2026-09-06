@@ -9,7 +9,6 @@ import { getApiErrorMessage } from '../utils/errors';
 const Strategies: React.FC = () => {
   const { data: strategies } = useQuery('strategy-list', () => strategyAPI.list());
   const { data: configs } = useQuery('strategy-configs', () => strategyAPI.getConfigs());
-  const [selectedStrategy, setSelectedStrategy] = useState('');
   const [showConfig, setShowConfig] = useState(false);
   const [configForm, setConfigForm] = useState<StrategyConfigRequest>({
     name: '',
@@ -27,8 +26,9 @@ const Strategies: React.FC = () => {
         toast.success('Strategy configured!');
         setShowConfig(false);
       },
-      onError: (error: unknown) =>
-        toast.error(getApiErrorMessage(error, 'Failed to create strategy')),
+      onError: (error: unknown) => {
+        toast.error(getApiErrorMessage(error, 'Failed to create strategy'));
+      },
     }
   );
 
@@ -62,7 +62,10 @@ const Strategies: React.FC = () => {
                 </div>
               </div>
               <button
-                onClick={() => setSelectedStrategy(name)}
+                onClick={() => {
+                  setConfigForm({ ...configForm, strategy_type: name });
+                  setShowConfig(true);
+                }}
                 className="p-2 text-gray-400 hover:text-primary-600"
               >
                 <Settings className="w-5 h-5" />

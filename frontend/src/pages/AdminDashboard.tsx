@@ -1,5 +1,4 @@
 import React from 'react';
-import { useQuery } from 'react-query';
 import { Users, TrendingUp, Shield, Activity } from 'lucide-react';
 
 const AdminDashboard: React.FC = () => {

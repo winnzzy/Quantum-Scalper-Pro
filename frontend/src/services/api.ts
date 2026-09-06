@@ -11,6 +11,8 @@ import {
   StrategyConfig,
   StrategyConfigRequest,
   RiskProfile,
+  WalkForwardRequest,
+  WalkForwardResult,
 } from '../types/api';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
@@ -78,6 +80,11 @@ export const riskAPI = {
 export const analyticsAPI = {
   getPerformance: (period: string) => api.get('/analytics/performance', { params: { period } }),
   getDistribution: () => api.get('/analytics/trades/distribution'),
+};
+
+export const backtestingAPI = {
+  runWalkForward: (data: WalkForwardRequest) =>
+    api.post<WalkForwardResult>('/backtesting/walk-forward', data),
 };
 
 
