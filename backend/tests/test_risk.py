@@ -2,6 +2,7 @@
 import pytest
 from decimal import Decimal
 from datetime import datetime, timezone
+from unittest.mock import AsyncMock
 
 from app.risk.engine import RiskManagementEngine
 from app.models.risk import RiskProfile
@@ -48,9 +49,14 @@ async def test_weekend_protection():
 
 
 @pytest.mark.asyncio
-async def test_position_size_calculation(db_session):
+async def test_position_size_calculation(db_session, monkeypatch):
     """Test position size calculation."""
     engine = RiskManagementEngine(db_session)
+    monkeypatch.setattr(
+        engine,
+        "_get_account_balance",
+        AsyncMock(return_value=Decimal("100000")),
+    )
     profile = await engine._get_risk_profile(1)
 
     sizing = await engine._calculate_position_size(
