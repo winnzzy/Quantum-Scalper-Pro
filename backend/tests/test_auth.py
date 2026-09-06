@@ -10,9 +10,20 @@ from app.models.user import User
 
 
 @pytest.fixture
-async def client():
-    async with AsyncClient(app=app, base_url="http://test") as ac:
-        yield ac
+async def client(db_session: AsyncSession):
+    async def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+    # Use an application-approved host so TrustedHostMiddleware exercises the
+    # request instead of rejecting it before the route under test.
+    try:
+        async with AsyncClient(
+            app=app, base_url="http://quantumscalper.pro"
+        ) as ac:
+            yield ac
+    finally:
+        app.dependency_overrides.pop(get_db, None)
 
 
 @pytest.mark.asyncio
