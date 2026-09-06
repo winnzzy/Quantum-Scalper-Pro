@@ -14,6 +14,7 @@ import RiskCenter from './pages/RiskCenter';
 import Settings from './pages/Settings';
 import AdminDashboard from './pages/AdminDashboard';
 import Billing from './pages/Billing';
+import Validation from './pages/Validation';
 import { useAuthStore } from './store/authStore';
 
 const queryClient = new QueryClient({
@@ -40,6 +41,7 @@ function App() {
             <Route path="positions" element={<Positions />} />
             <Route path="analytics" element={<Analytics />} />
             <Route path="strategies" element={<Strategies />} />
+            <Route path="validation" element={<Validation />} />
             <Route path="risk" element={<RiskCenter />} />
             <Route path="settings" element={<Settings />} />
             <Route path="billing" element={<Billing />} />

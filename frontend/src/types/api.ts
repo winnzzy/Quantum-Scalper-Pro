@@ -85,6 +85,7 @@ export interface AuthUser {
   role: 'admin' | 'trader' | 'viewer' | 'affiliate';
   first_name?: string;
   last_name?: string;
+  timezone?: string;
 }
 
 export interface RegisterRequest {
@@ -127,4 +128,69 @@ export interface RiskProfile {
   max_open_trades: number;
   trading_paused: boolean;
   pause_reason?: string;
+  mandatory_stop_loss?: boolean;
+  spread_protection_enabled?: boolean;
+  volatility_protection_enabled?: boolean;
+  weekend_protection_enabled?: boolean;
+  news_protection_enabled?: boolean;
+}
+
+export interface WalkForwardRequest {
+  strategy_name: string;
+  symbol: string;
+  timeframe: '1m' | '5m' | '15m' | '30m' | '1h' | '4h' | '1d';
+  initial_balance: number;
+  parameter_candidates: Array<Record<string, number | string | boolean>>;
+  train_candles: number;
+  test_candles: number;
+  step_candles?: number;
+  min_train_trades: number;
+}
+
+export interface ValidationMetrics {
+  total_trades: number;
+  winning_trades: number;
+  losing_trades: number;
+  win_rate: number;
+  gross_profit: number;
+  gross_loss: number;
+  net_pnl: number;
+  profit_factor: number;
+  sharpe_ratio: number;
+  sortino_ratio: number;
+  max_drawdown_pct: number;
+  error?: string;
+}
+
+export interface WalkForwardWindow {
+  window: number;
+  train_period: { start: string; end: string; candles: number };
+  test_period: { start: string; end: string; candles: number };
+  selected_parameters: Record<string, number | string | boolean>;
+  training_metrics: ValidationMetrics;
+  out_of_sample_metrics: ValidationMetrics;
+}
+
+export interface WalkForwardResult {
+  strategy: string;
+  symbol: string;
+  timeframe: string;
+  method: string;
+  candidate_count: number;
+  windows: WalkForwardWindow[];
+  out_of_sample_summary: {
+    window_count: number;
+    positive_windows: number;
+    positive_window_rate: number;
+    total_trades: number;
+    win_rate: number;
+    gross_profit: number;
+    gross_loss: number;
+    net_pnl: number;
+    profit_factor: number;
+    worst_window_drawdown_pct: number;
+    validation_status: 'promising' | 'not_robust' | 'insufficient_evidence';
+  };
+  interpretation: string;
+  selection_bias_warning: string;
 }

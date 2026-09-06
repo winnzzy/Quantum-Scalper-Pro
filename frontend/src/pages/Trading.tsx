@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { useQuery, useMutation } from 'react-query';
 import { tradingAPI, strategyAPI } from '../services/api';
 import { toast } from 'react-hot-toast';
-import { Play, Square, RefreshCw, TrendingUp, TrendingDown } from 'lucide-react';
+import { Play, Square, RefreshCw } from 'lucide-react';
+import { getApiErrorMessage } from '../utils/errors';
 
 const Trading: React.FC = () => {
   const [selectedSymbol, setSelectedSymbol] = useState('BTC/USDT');
@@ -25,7 +26,9 @@ const Trading: React.FC = () => {
         toast.success('Trading started!');
         refetchStatus();
       },
-      onError: (error: any) => toast.error(error.response?.data?.detail || 'Failed to start'),
+      onError: (error: unknown) => {
+        toast.error(getApiErrorMessage(error, 'Failed to start'));
+      },
     }
   );
 
@@ -36,7 +39,9 @@ const Trading: React.FC = () => {
         toast.success('Trading stopped!');
         refetchStatus();
       },
-      onError: (error: any) => toast.error(error.response?.data?.detail || 'Failed to stop'),
+      onError: (error: unknown) => {
+        toast.error(getApiErrorMessage(error, 'Failed to stop'));
+      },
     }
   );
 
