@@ -1,12 +1,17 @@
 """Pytest configuration."""
+import os
+
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.core.database import Base
 
-# Test database
-TEST_DATABASE_URL = "postgresql+asyncpg://qsp_admin:password@localhost:5432/qsp_test"
+# Unit tests are self-contained by default. CI separately exercises Alembic
+# against PostgreSQL before running this suite.
+TEST_DATABASE_URL = os.getenv(
+    "TEST_DATABASE_URL", "sqlite+aiosqlite:///:memory:"
+)
 
 
 @pytest.fixture
