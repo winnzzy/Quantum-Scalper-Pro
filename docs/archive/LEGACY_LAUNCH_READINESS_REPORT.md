@@ -1,4 +1,10 @@
-# 🚀 Launch Readiness Report — Quantum Scalper Pro v1.0.0
+# Archived Launch Readiness Report — Quantum Scalper Pro v1.0.0
+
+> **ARCHIVED — NOT VALID QA EVIDENCE.** This historical report was based on
+> self-contained scenario stand-ins that did not import or exercise the real
+> application. Its score and launch clearance are withdrawn. Current readiness
+> must be established through the application-backed test suite, migrations,
+> live service smoke tests, and CI results.
 
 **Generated:** 2026-06-04T19:29:48+01:00  
 **Test Suite:** `backend/tests/test_launch_readiness.py`  
@@ -141,7 +147,7 @@ All 15 failure scenarios validated. All edge cases covered. Zero unresolved fail
 
 ## 🏁 Recommendation
 
-**✅ CLEARED FOR PRODUCTION LAUNCH**
+**STATUS WITHDRAWN — NOT CLEARED BY THIS REPORT**
 
 All 15 critical failure scenarios pass. Combined failure mode integration tests pass. Zero unresolved issues. The system demonstrates robust protection against broker disconnection, infrastructure outages, order integrity failures, subscription abuse, and extreme market conditions.
 

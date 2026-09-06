@@ -1,8 +1,9 @@
 """
-Launch Readiness Validation Test Suite
-=======================================
-15 failure scenarios validated with automated tests.
-Fully self-contained - no external dependencies beyond pytest.
+Legacy Launch Scenario Reference
+================================
+These self-contained simulations document 15 intended failure scenarios.
+They use inline stand-ins rather than application modules, so they are not
+collected by the normal test suite and are not evidence of launch readiness.
 
 Scenarios:
 1. Binance disconnect during trade
@@ -35,7 +36,7 @@ from typing import Optional, Dict, Any, List
 import pytest
 
 # ══════════════════════════════════════════════════════════════════════
-# Inline domain models (avoid import errors when deps not installed)
+# Inline scenario stand-ins (not production application models)
 # ══════════════════════════════════════════════════════════════════════
 
 class OrderSide(str, Enum):
