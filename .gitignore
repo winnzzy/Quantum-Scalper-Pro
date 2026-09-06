@@ -58,6 +58,7 @@ coverage.xml
 # Node
 node_modules/
 frontend/build/
+frontend/dist/
 frontend/.env
 
 # Docker
