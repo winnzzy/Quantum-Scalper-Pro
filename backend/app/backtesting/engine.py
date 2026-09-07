@@ -30,6 +30,10 @@ from app.core.logging import logger
 from app.strategies.registry import StrategyRegistry
 from app.strategies.base import SignalType
 from app.brokers.base import OrderSide, OrderType, MarketData
+from app.backtesting.data import (
+    HistoricalDataValidationError,
+    validate_ohlcv_frame,
+)
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -150,9 +154,12 @@ class BacktestingEngine:
         slip = Decimal(str(slippage_rate)) if slippage_rate is not None else self.slippage_rate
 
         # Load historical data
-        df = await self._load_data(
-            symbol, timeframe, start_date, end_date, allow_synthetic_data
-        )
+        try:
+            df = await self._load_data(
+                symbol, timeframe, start_date, end_date, allow_synthetic_data
+            )
+        except HistoricalDataValidationError as exc:
+            return {"error": f"Historical data validation failed: {exc}"}
 
         if df is None or len(df) < 50:
             return {"error": "Insufficient historical data"}
@@ -540,9 +547,13 @@ class BacktestingEngine:
         if len(candidates) > 50:
             return {"error": "A maximum of 50 parameter candidates is supported"}
 
-        df = await self._load_data(
-            symbol, timeframe, start_date, end_date, allow_synthetic_data=False
-        )
+        try:
+            df = await self._load_data(
+                symbol, timeframe, start_date, end_date,
+                allow_synthetic_data=False,
+            )
+        except HistoricalDataValidationError as exc:
+            return {"error": f"Historical data validation failed: {exc}"}
         if df is None:
             return {"error": "Historical data is required for walk-forward validation"}
         if "timestamp" not in df.columns:
@@ -1058,8 +1069,8 @@ class BacktestingEngine:
 
             df = df.reset_index(drop=True)
 
-            # Validate OHLCV invariants
-            df = self._validate_ohlcv(df)
+            # Reject corrupted data rather than silently rewriting prices.
+            df, _ = validate_ohlcv_frame(df, timeframe, min_rows=50)
 
             return df
 
@@ -1074,21 +1085,6 @@ class BacktestingEngine:
             f"No historical data found for {symbol}; generating test-only synthetic data"
         )
         return self._generate_synthetic_data(symbol, timeframe)
-
-    def _validate_ohlcv(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Validate and fix OHLCV data invariants."""
-        # Ensure high >= max(open, close) and low <= min(open, close)
-        df["high"] = df[["high", "open", "close"]].max(axis=1)
-        df["low"] = df[["low", "open", "close"]].min(axis=1)
-
-        # Ensure positive values
-        for col in ["open", "high", "low", "close"]:
-            df[col] = df[col].abs()
-
-        # Ensure volume is non-negative
-        df["volume"] = df["volume"].clip(lower=0)
-
-        return df
 
     def _generate_synthetic_data(self, symbol: str, timeframe: str) -> pd.DataFrame:
         """Generate realistic synthetic OHLCV data for testing."""
