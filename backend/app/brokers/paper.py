@@ -68,6 +68,19 @@ class PaperBroker(BaseBroker):
         **kwargs
     ) -> OrderResult:
         """Simulate order placement."""
+        if quantity <= 0:
+            return OrderResult(
+                success=False,
+                status=OrderStatus.REJECTED,
+                error_message="Quantity must be greater than zero",
+            )
+        if symbol in self._positions:
+            return OrderResult(
+                success=False,
+                status=OrderStatus.REJECTED,
+                error_message=f"Position already open for {symbol}",
+            )
+
         self._order_counter += 1
         order_id = f"PAPER_{self._order_counter}"
 
@@ -86,15 +99,20 @@ class PaperBroker(BaseBroker):
         notional = fill_price * quantity
         commission = notional * self._commission_rate
 
-        # Update balance
-        if side == OrderSide.BUY:
-            cost = notional + commission
-            if cost > self._balance:
-                return OrderResult(
-                    success=False,
-                    error_message=f"Insufficient balance. Required: {cost}, Available: {self._balance}"
-                )
-            self._balance -= cost
+        # Paper balance represents realized account equity, not spot-wallet
+        # inventory. Reserve enough capital for either direction and debit the
+        # entry commission now; realized P&L is booked only when closing.
+        required_capital = notional + commission
+        if required_capital > self._balance:
+            return OrderResult(
+                success=False,
+                status=OrderStatus.REJECTED,
+                error_message=(
+                    f"Insufficient balance. Required: {required_capital}, "
+                    f"Available: {self._balance}"
+                ),
+            )
+        self._balance -= commission
 
         # Create position
         position = PositionInfo(
@@ -177,8 +195,9 @@ class PaperBroker(BaseBroker):
         commission = notional * self._commission_rate
         net_pnl = pnl - commission
 
-        # Update balance
-        self._balance += notional + net_pnl if position.side == OrderSide.BUY else notional - net_pnl
+        # Entry commission was debited when the position opened. Closing books
+        # only price P&L and the exit commission for both long and short trades.
+        self._balance += net_pnl
 
         self._order_counter += 1
         result = OrderResult(

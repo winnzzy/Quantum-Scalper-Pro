@@ -61,6 +61,24 @@ def test_daily_loss_lock_resets_on_new_utc_day():
     assert state.daily_start_balance == state.balance
 
 
+def test_run_level_risk_limits_override_engine_defaults():
+    engine = BacktestingEngine()
+    state = RiskState(
+        balance=Decimal("99000"),
+        peak_equity=Decimal("100000"),
+    )
+
+    engine._update_risk_state(
+        state,
+        Decimal("-100"),
+        max_drawdown_pct=Decimal("20"),
+        max_consecutive_losses=10,
+    )
+
+    assert state.trading_paused is False
+    assert state.consecutive_losses == 1
+
+
 @pytest.mark.asyncio
 async def test_breakout_uses_prior_resistance():
     rows = []
