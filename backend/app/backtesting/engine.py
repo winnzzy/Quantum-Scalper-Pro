@@ -145,9 +145,9 @@ class BacktestingEngine:
         risk_pct = Decimal(str(risk_per_trade_pct)) if risk_per_trade_pct else self.risk_per_trade_pct
         dd_pct = Decimal(str(max_drawdown_pct)) if max_drawdown_pct else self.max_drawdown_pct
         max_consec = max_consecutive_losses if max_consecutive_losses is not None else self.max_consecutive_losses
-        spread = Decimal(str(spread_pct)) if spread_pct else self.default_spread_pct
-        comm = Decimal(str(commission_rate)) if commission_rate else self.commission_rate
-        slip = Decimal(str(slippage_rate)) if slippage_rate else self.slippage_rate
+        spread = Decimal(str(spread_pct)) if spread_pct is not None else self.default_spread_pct
+        comm = Decimal(str(commission_rate)) if commission_rate is not None else self.commission_rate
+        slip = Decimal(str(slippage_rate)) if slippage_rate is not None else self.slippage_rate
 
         # Load historical data
         df = await self._load_data(
@@ -214,7 +214,9 @@ class BacktestingEngine:
                         cost_log["total_slippage"] += trade.slippage_cost
                         cost_log["total_spread"] += trade.spread_cost
                         risk_state.balance += trade.net_pnl
-                        self._update_risk_state(risk_state, trade.net_pnl)
+                        self._update_risk_state(
+                            risk_state, trade.net_pnl, dd_pct, max_consec
+                        )
                         position = None
 
                         if risk_state.trading_paused:
@@ -292,7 +294,9 @@ class BacktestingEngine:
                     cost_log["total_slippage"] += sl_tp_trade.slippage_cost
                     cost_log["total_spread"] += sl_tp_trade.spread_cost
                     risk_state.balance += sl_tp_trade.net_pnl
-                    self._update_risk_state(risk_state, sl_tp_trade.net_pnl)
+                    self._update_risk_state(
+                        risk_state, sl_tp_trade.net_pnl, dd_pct, max_consec
+                    )
                     position = None
 
                     if risk_state.trading_paused:
@@ -333,6 +337,10 @@ class BacktestingEngine:
             cost_log["total_slippage"] += trade.slippage_cost
             cost_log["total_spread"] += trade.spread_cost
             risk_state.balance += trade.net_pnl
+            self._update_risk_state(
+                risk_state, trade.net_pnl, dd_pct, max_consec
+            )
+            equity_curve.append(float(risk_state.balance))
             position = None
 
         # ──────────────────────────────────────────────────────────────
@@ -952,8 +960,24 @@ class BacktestingEngine:
     # Risk state management (mirrors RiskManagementEngine)
     # ──────────────────────────────────────────────────────────────────
 
-    def _update_risk_state(self, state: RiskState, pnl: Decimal):
+    def _update_risk_state(
+        self,
+        state: RiskState,
+        pnl: Decimal,
+        max_drawdown_pct: Optional[Decimal] = None,
+        max_consecutive_losses: Optional[int] = None,
+    ):
         """Update risk metrics after a trade. Mirrors update_trade_result."""
+        drawdown_limit = (
+            max_drawdown_pct
+            if max_drawdown_pct is not None
+            else self.max_drawdown_pct
+        )
+        loss_limit = (
+            max_consecutive_losses
+            if max_consecutive_losses is not None
+            else self.max_consecutive_losses
+        )
         state.total_trades += 1
 
         if pnl < 0:
@@ -972,13 +996,17 @@ class BacktestingEngine:
             state.max_drawdown = state.current_drawdown
 
         # Check risk limits
-        if state.current_drawdown >= self.max_drawdown_pct:
+        if state.current_drawdown >= drawdown_limit:
             state.trading_paused = True
-            state.pause_reason = f"Max drawdown {state.current_drawdown}% >= {self.max_drawdown_pct}%"
+            state.pause_reason = (
+                f"Max drawdown {state.current_drawdown}% >= {drawdown_limit}%"
+            )
 
-        if state.consecutive_losses >= self.max_consecutive_losses:
+        if state.consecutive_losses >= loss_limit:
             state.trading_paused = True
-            state.pause_reason = f"Consecutive losses {state.consecutive_losses} >= {self.max_consecutive_losses}"
+            state.pause_reason = (
+                f"Consecutive losses {state.consecutive_losses} >= {loss_limit}"
+            )
 
         daily_loss_pct = (
             state.daily_pnl / state.daily_start_balance * 100

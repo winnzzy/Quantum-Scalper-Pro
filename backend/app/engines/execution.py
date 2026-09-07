@@ -167,7 +167,8 @@ class ExecutionEngine:
                 ai_quality_score=Decimal(str(ai_result["quality_score"])),
                 broker=BrokerType(broker_type) if broker_type in [e.value for e in BrokerType] else BrokerType.PAPER,
                 broker_trade_id=order_result.order_id,
-                broker_order_id=order_result.order_id
+                broker_order_id=order_result.order_id,
+                commission=order_result.commission or Decimal("0"),
             )
 
             self.db.add(trade)
@@ -238,8 +239,10 @@ class ExecutionEngine:
             trade.exit_price = close_result.filled_price
             trade.exit_time = datetime.now(timezone.utc)
             trade.gross_pnl = pnl
-            trade.net_pnl = pnl - (close_result.commission or Decimal("0"))
-            trade.commission = (trade.commission or Decimal("0")) + (close_result.commission or Decimal("0"))
+            exit_commission = close_result.commission or Decimal("0")
+            entry_commission = trade.commission or Decimal("0")
+            trade.net_pnl = pnl - entry_commission - exit_commission
+            trade.commission = entry_commission + exit_commission
 
             await self.db.commit()
 
