@@ -13,6 +13,8 @@ import {
   RiskProfile,
   WalkForwardRequest,
   WalkForwardResult,
+  MarketReadiness,
+  ValidationPreset,
 } from '../types/api';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
@@ -103,6 +105,10 @@ export const analyticsAPI = {
 export const backtestingAPI = {
   runWalkForward: (data: WalkForwardRequest) =>
     api.post<WalkForwardResult>('/backtesting/walk-forward', data),
+  getPreset: (symbol: string) =>
+    api.get<ValidationPreset>(`/backtesting/preset/${encodeURIComponent(symbol)}`),
+  getReadiness: () =>
+    api.get<{ markets: MarketReadiness[] }>('/backtesting/readiness'),
 };
 
 

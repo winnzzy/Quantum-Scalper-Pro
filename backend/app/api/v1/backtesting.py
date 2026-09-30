@@ -7,6 +7,8 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.auth.service import get_current_active_user
 from app.backtesting.engine import backtest_engine
+from app.backtesting.presets import get_validation_preset
+from app.backtesting.evidence import qualification_readiness, save_qualification
 from app.models.user import User
 from app.strategies.registry import StrategyRegistry
 from app.core.markets import get_market, normalize_symbol, validate_timeframe
@@ -31,6 +33,7 @@ class WalkForwardRequest(BaseModel):
     test_candles: int = Field(default=250, ge=60, le=100000)
     step_candles: Optional[int] = Field(default=None, ge=1, le=100000)
     min_train_trades: int = Field(default=5, ge=1, le=10000)
+    holdout_candles: int = Field(default=500, ge=100, le=100000)
     risk_per_trade_pct: Optional[float] = Field(default=None, gt=0, le=5)
     max_drawdown_pct: Optional[float] = Field(default=None, gt=0, le=100)
     max_consecutive_losses: Optional[int] = Field(default=None, ge=1, le=100)
@@ -56,6 +59,28 @@ class WalkForwardRequest(BaseModel):
         return self
 
 
+@router.get("/readiness")
+async def validation_readiness(
+    current_user: User = Depends(get_current_active_user),
+):
+    """Report evidence blockers for both focused markets."""
+    return {
+        "markets": [
+            qualification_readiness(symbol, get_validation_preset(symbol)["timeframe"])
+            for symbol in ("BTC/USDT", "XAU/USD")
+        ]
+    }
+
+
+@router.get("/preset/{symbol:path}")
+async def validation_preset(
+    symbol: str,
+    current_user: User = Depends(get_current_active_user),
+):
+    """Return the bounded, asset-specific starting research space."""
+    return {"symbol": normalize_symbol(symbol), **get_validation_preset(symbol)}
+
+
 @router.post("/walk-forward")
 async def run_walk_forward(
     request: WalkForwardRequest,
@@ -74,4 +99,5 @@ async def run_walk_forward(
     result = await backtest_engine.run_walk_forward(**values)
     if "error" in result:
         raise HTTPException(status_code=400, detail=result["error"])
+    save_qualification(request.symbol, request.timeframe, result)
     return result
