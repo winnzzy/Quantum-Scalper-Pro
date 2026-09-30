@@ -3,10 +3,12 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import func, select
 
 from app.core.database import get_db
 from app.auth.service import AuthService, get_current_user, get_current_active_user
-from app.models.user import User
+from app.models.user import User, UserRole
+from app.core.config import settings
 
 router = APIRouter()
 
@@ -44,14 +46,21 @@ class UserResponse(BaseModel):
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def register(user_data: UserCreate, db: AsyncSession = Depends(get_db)):
-    """Register new user."""
+    """Create the owner account; public sign-up is disabled in private mode."""
+    if settings.PRIVATE_MODE and not settings.PUBLIC_REGISTRATION_ENABLED:
+        if settings.OWNER_EMAIL and user_data.email.lower() != settings.OWNER_EMAIL.lower():
+            raise HTTPException(status_code=403, detail="Registration is restricted to the configured owner")
+        user_count = await db.scalar(select(func.count(User.id)))
+        if user_count:
+            raise HTTPException(status_code=403, detail="Private owner account already exists")
     auth_service = AuthService(db)
     user = await auth_service.create_user(
         email=user_data.email,
         username=user_data.username,
         password=user_data.password,
         first_name=user_data.first_name,
-        last_name=user_data.last_name
+        last_name=user_data.last_name,
+        role=UserRole.ADMIN if settings.PRIVATE_MODE else UserRole.TRADER,
     )
     return user
 

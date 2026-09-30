@@ -41,6 +41,18 @@ async def test_register_user(client: AsyncClient):
 
 
 @pytest.mark.asyncio
+async def test_private_mode_rejects_second_registration(client: AsyncClient):
+    first = await client.post("/api/v1/auth/register", json={
+        "email": "owner@example.com", "username": "owner", "password": "TestPass123!"
+    })
+    assert first.status_code == 201
+    second = await client.post("/api/v1/auth/register", json={
+        "email": "intruder@example.com", "username": "intruder", "password": "TestPass123!"
+    })
+    assert second.status_code == 403
+
+
+@pytest.mark.asyncio
 async def test_login_user(client: AsyncClient):
     """Test user login."""
     # Register first

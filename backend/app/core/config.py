@@ -2,7 +2,7 @@
 import os
 from functools import lru_cache
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 
 
 class Settings(BaseSettings):
@@ -23,6 +23,10 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     MAX_LOGIN_ATTEMPTS: int = 5
     LOCKOUT_DURATION_MINUTES: int = 30
+    PRIVATE_MODE: bool = True
+    OWNER_EMAIL: str | None = None
+    PUBLIC_REGISTRATION_ENABLED: bool = False
+    COMMERCIAL_FEATURES_ENABLED: bool = False
 
     # Database
     DATABASE_URL: str = Field(default="postgresql+asyncpg://qsp_admin:password@localhost:5432/quantum_scalper_pro")
@@ -47,6 +51,14 @@ class Settings(BaseSettings):
     MAX_CONSECUTIVE_LOSSES: int = 5
     MAX_OPEN_TRADES: int = 10
     MANDATORY_STOP_LOSS: bool = True
+    LIVE_TRADING_ENABLED: bool = False
+    EMERGENCY_STOP: bool = False
+    STARTUP_RECOVERY_REQUIRED: bool = True
+    METRICS_ENABLED: bool = False
+    MAX_MARKET_DATA_AGE_SECONDS: int = Field(default=15, ge=1, le=300)
+    ORDER_IDEMPOTENCY_TTL_SECONDS: int = Field(default=300, ge=30, le=3600)
+    MIN_PAPER_TRADES_PER_MARKET: int = Field(default=100, ge=1)
+    MIN_PAPER_BURN_IN_DAYS: int = Field(default=30, ge=1)
 
     # Broker - Binance
     BINANCE_API_KEY: str | None = None
@@ -120,6 +132,12 @@ class Settings(BaseSettings):
         if len(v) < 32 and os.getenv("ENVIRONMENT") == "production":
             raise ValueError("SECRET_KEY must be at least 32 characters in production")
         return v
+
+    @model_validator(mode="after")
+    def validate_private_production(self):
+        if self.ENVIRONMENT == "production" and self.PRIVATE_MODE and not self.OWNER_EMAIL:
+            raise ValueError("OWNER_EMAIL is required for private production deployments")
+        return self
 
 @lru_cache()
 def get_settings() -> Settings:

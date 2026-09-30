@@ -1,5 +1,6 @@
 """API Routes for Quantum Scalper Pro."""
 from fastapi import APIRouter
+from app.core.config import settings
 
 from app.api.v1 import (
     admin,
@@ -8,6 +9,7 @@ from app.api.v1 import (
     backtesting,
     billing,
     licensing,
+    health,
     risk,
     strategies,
     system,
@@ -24,5 +26,7 @@ api_router.include_router(risk.router, prefix="/risk", tags=["Risk Management"])
 api_router.include_router(analytics.router, prefix="/analytics", tags=["Analytics"])
 api_router.include_router(admin.router, prefix="/admin", tags=["Admin"])
 api_router.include_router(system.router, prefix="/system", tags=["System"])
-api_router.include_router(licensing.router, prefix="/licensing", tags=["Licensing"])
-api_router.include_router(billing.router, prefix="/billing", tags=["Billing"])
+api_router.include_router(health.router)
+if settings.COMMERCIAL_FEATURES_ENABLED:
+    api_router.include_router(licensing.router, prefix="/licensing", tags=["Licensing"])
+    api_router.include_router(billing.router, prefix="/billing", tags=["Billing"])

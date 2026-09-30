@@ -19,6 +19,8 @@ from app.core.markets import (
 )
 from app.strategies.registry import StrategyRegistry
 from app.backtesting.evidence import qualification_readiness
+from app.core.config import settings
+from app.services.launch_readiness import paper_burn_in_readiness
 
 router = APIRouter()
 
@@ -325,6 +327,16 @@ async def start_trading(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     if broker_type != "paper":
+        if not settings.LIVE_TRADING_ENABLED:
+            raise HTTPException(status_code=423, detail="Live trading is not armed")
+        if settings.EMERGENCY_STOP:
+            raise HTTPException(status_code=423, detail="Emergency stop is active")
+        paper_readiness = await paper_burn_in_readiness(db, current_user.id, config.symbols)
+        if not paper_readiness["ready"]:
+            raise HTTPException(
+                status_code=409,
+                detail="Live trading blocked — " + "; ".join(paper_readiness["blockers"]),
+            )
         evidence_blockers = []
         for symbol in config.symbols:
             timeframe = config.timeframes[0] if config.timeframes else "5m"

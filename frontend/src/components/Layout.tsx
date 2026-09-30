@@ -12,7 +12,6 @@ import {
   Activity,
   Zap,
   Users,
-  CreditCard,
   FlaskConical,
 } from 'lucide-react';
 
@@ -34,7 +33,6 @@ const Layout: React.FC = () => {
     { to: '/strategies', icon: Zap, label: 'Strategies' },
     { to: '/validation', icon: FlaskConical, label: 'Validation' },
     { to: '/risk', icon: Shield, label: 'Risk Center' },
-    { to: '/billing', icon: CreditCard, label: 'Plans & Billing' },
     { to: '/settings', icon: Settings, label: 'Settings' },
   ];
 

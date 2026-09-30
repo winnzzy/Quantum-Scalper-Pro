@@ -112,6 +112,8 @@ trading. No result in this repository establishes a future win rate.
 
 ## Quick Start
 
+For the single-owner December 2026 rollout, follow the mandatory [private launch gate](docs/PRIVATE_LAUNCH_DECEMBER_2026.md). Live execution defaults to disabled and cannot start without paper burn-in and dataset qualification evidence.
+
 ### Prerequisites
 - Docker & Docker Compose
 - Git

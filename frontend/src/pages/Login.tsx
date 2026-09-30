@@ -93,9 +93,9 @@ const Login: React.FC = () => {
           </form>
 
           <p className="mt-4 text-center text-sm text-gray-600">
-            Don't have an account?{' '}
+            First-time private setup?{' '}
             <button onClick={() => navigate('/register')} className="text-primary-600 hover:underline">
-              Register
+              Create owner account
             </button>
           </p>
         </div>
