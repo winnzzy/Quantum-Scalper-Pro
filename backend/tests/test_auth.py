@@ -7,6 +7,7 @@ from app.main import app
 from app.auth.service import AuthService
 from app.core.database import get_db
 from app.models.user import User
+from app.auth.totp import generate_code
 
 
 @pytest.fixture
@@ -107,3 +108,33 @@ async def test_invalid_login(client: AsyncClient):
         "password": "wrongpassword"
     })
     assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_owner_can_enable_mfa_and_login_requires_code(client: AsyncClient):
+    await client.post("/api/v1/auth/register", json={
+        "email": "mfa@example.com", "username": "mfaowner", "password": "TestPass123!"
+    })
+    login = await client.post("/api/v1/auth/login", data={
+        "username": "mfa@example.com", "password": "TestPass123!"
+    })
+    token = login.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+    setup = await client.post("/api/v1/auth/mfa/setup", headers=headers)
+    assert setup.status_code == 200
+    secret = setup.json()["secret"]
+    enabled = await client.post(
+        "/api/v1/auth/mfa/enable", headers=headers, json={"code": generate_code(secret)}
+    )
+    assert enabled.status_code == 200
+
+    missing = await client.post("/api/v1/auth/login", data={
+        "username": "mfa@example.com", "password": "TestPass123!"
+    })
+    assert missing.status_code == 401
+    verified = await client.post("/api/v1/auth/login", data={
+        "username": "mfa@example.com",
+        "password": "TestPass123!",
+        "otp_code": generate_code(secret),
+    })
+    assert verified.status_code == 200

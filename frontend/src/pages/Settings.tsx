@@ -2,9 +2,14 @@ import React, { useState } from 'react';
 import { useAuthStore } from '../store/authStore';
 import { toast } from 'react-hot-toast';
 import { User, Bell, Lock, Globe, Save } from 'lucide-react';
+import { authAPI } from '../services/api';
+import { getApiErrorMessage } from '../utils/errors';
 
 const Settings: React.FC = () => {
-  const { user } = useAuthStore();
+  const { user, setUser } = useAuthStore();
+  const [mfaSecret, setMfaSecret] = useState('');
+  const [mfaCode, setMfaCode] = useState('');
+  const [mfaLoading, setMfaLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('profile');
   const [formData, setFormData] = useState({
     first_name: user?.first_name || '',
@@ -24,6 +29,35 @@ const Settings: React.FC = () => {
 
   const handleSave = () => {
     toast.success('Settings saved successfully');
+  };
+
+  const beginMfaSetup = async () => {
+    setMfaLoading(true);
+    try {
+      const response = await authAPI.setupMfa();
+      setMfaSecret(response.data.secret);
+      toast.success('Authenticator secret created');
+    } catch (error: unknown) {
+      toast.error(getApiErrorMessage(error, 'Unable to start MFA setup'));
+    } finally {
+      setMfaLoading(false);
+    }
+  };
+
+  const confirmMfa = async () => {
+    setMfaLoading(true);
+    try {
+      await authAPI.enableMfa(mfaCode);
+      const refreshed = await authAPI.me();
+      setUser(refreshed.data);
+      setMfaSecret('');
+      setMfaCode('');
+      toast.success('Two-factor authentication enabled');
+    } catch (error: unknown) {
+      toast.error(getApiErrorMessage(error, 'Invalid authenticator code'));
+    } finally {
+      setMfaLoading(false);
+    }
   };
 
   return (
@@ -139,10 +173,43 @@ const Settings: React.FC = () => {
               </div>
               <div className="p-4 bg-gray-50 rounded-lg">
                 <p className="font-medium">Two-Factor Authentication</p>
-                <p className="text-sm text-gray-500 mb-3">Add an extra layer of security</p>
-                <button className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg text-sm hover:bg-gray-300">
-                  Enable 2FA
-                </button>
+                <p className="text-sm text-gray-500 mb-3">
+                  {user?.two_factor_enabled
+                    ? 'Enabled — an authenticator code is required at login.'
+                    : 'Required before live trading can be armed.'}
+                </p>
+                {!user?.two_factor_enabled && !mfaSecret && (
+                  <button
+                    onClick={beginMfaSetup}
+                    disabled={mfaLoading}
+                    className="px-4 py-2 bg-primary-600 text-white rounded-lg text-sm disabled:opacity-50"
+                  >
+                    Set up authenticator
+                  </button>
+                )}
+                {!user?.two_factor_enabled && mfaSecret && (
+                  <div className="space-y-3">
+                    <p className="text-sm text-gray-700">
+                      Add this setup key in Google Authenticator, Microsoft Authenticator, or 1Password:
+                    </p>
+                    <code className="block break-all rounded bg-white p-3 text-sm select-all">{mfaSecret}</code>
+                    <input
+                      value={mfaCode}
+                      onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      className="input max-w-xs"
+                      placeholder="Enter the 6-digit code"
+                    />
+                    <button
+                      onClick={confirmMfa}
+                      disabled={mfaLoading || mfaCode.length !== 6}
+                      className="block px-4 py-2 bg-primary-600 text-white rounded-lg text-sm disabled:opacity-50"
+                    >
+                      Verify and enable
+                    </button>
+                  </div>
+                )}
               </div>
               <div className="p-4 bg-gray-50 rounded-lg">
                 <p className="font-medium">API Keys</p>

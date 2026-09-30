@@ -1,5 +1,5 @@
 """Authentication API routes."""
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, Form, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,6 +9,9 @@ from app.core.database import get_db
 from app.auth.service import AuthService, get_current_user, get_current_active_user
 from app.models.user import User, UserRole
 from app.core.config import settings
+from app.auth.totp import (
+    decrypt_secret, encrypt_secret, generate_secret, provisioning_uri, verify_code,
+)
 
 router = APIRouter()
 
@@ -42,6 +45,11 @@ class UserResponse(BaseModel):
     role: str
     is_active: bool
     subscription_plan: str
+    two_factor_enabled: bool
+
+
+class MfaCode(BaseModel):
+    code: str
 
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
@@ -66,10 +74,16 @@ async def register(user_data: UserCreate, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/login", response_model=TokenResponse)
-async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSession = Depends(get_db)):
+async def login(
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    otp_code: str | None = Form(default=None),
+    db: AsyncSession = Depends(get_db),
+):
     """Login and get tokens."""
     auth_service = AuthService(db)
-    user = await auth_service.authenticate_user(form_data.username, form_data.password)
+    user = await auth_service.authenticate_user(
+        form_data.username, form_data.password, otp_code=otp_code
+    )
 
     if not user:
         raise HTTPException(
@@ -95,6 +109,37 @@ async def refresh_token(refresh_token: str, db: AsyncSession = Depends(get_db)):
         )
 
     return {"access_token": new_token, "token_type": "bearer"}
+
+
+@router.post("/mfa/setup")
+async def setup_mfa(
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Create a pending authenticator secret; enabling still requires a valid code."""
+    if current_user.two_factor_enabled:
+        raise HTTPException(status_code=409, detail="Two-factor authentication is already enabled")
+    secret = generate_secret()
+    current_user.two_factor_secret = encrypt_secret(secret)
+    await db.commit()
+    return {
+        "secret": secret,
+        "provisioning_uri": provisioning_uri(secret, current_user.email),
+    }
+
+
+@router.post("/mfa/enable")
+async def enable_mfa(
+    payload: MfaCode,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    secret = decrypt_secret(current_user.two_factor_secret or "")
+    if not secret or not verify_code(secret, payload.code):
+        raise HTTPException(status_code=400, detail="Invalid authenticator code")
+    current_user.two_factor_enabled = True
+    await db.commit()
+    return {"two_factor_enabled": True}
 
 
 @router.get("/me", response_model=UserResponse)

@@ -20,6 +20,7 @@ from app.core.config import settings
 from app.core.hardening import IdempotencyGuard
 from app.core.markets import get_market, normalize_symbol, validate_market_broker
 from app.core.redis import redis_client
+from app.core.operational_state import emergency_stop_active
 
 
 order_idempotency_guard = IdempotencyGuard(
@@ -85,7 +86,10 @@ class ExecutionEngine:
             if broker_type != "paper" and not settings.LIVE_TRADING_ENABLED:
                 result["message"] = "Live trading is not armed (LIVE_TRADING_ENABLED=false)"
                 return result
-            if settings.EMERGENCY_STOP:
+            if broker_type != "paper" and not redis_client.is_healthy:
+                result["message"] = "Live trading blocked: Redis safety state is unavailable"
+                return result
+            if await emergency_stop_active():
                 result["message"] = "Emergency stop is active"
                 return result
 

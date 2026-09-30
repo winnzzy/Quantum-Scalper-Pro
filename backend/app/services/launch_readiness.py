@@ -8,6 +8,9 @@ from app.backtesting.evidence import qualification_readiness
 from app.core.config import settings
 from app.core.markets import MARKETS, normalize_symbol
 from app.models.trading import BrokerType, Trade, TradeStatus
+from app.models.user import User
+from app.core.operational_state import emergency_stop_active
+from app.core.redis import redis_client
 
 
 async def paper_burn_in_readiness(
@@ -68,11 +71,14 @@ async def private_launch_readiness(db: AsyncSession, user_id: int) -> dict:
         qualification = qualification_readiness(symbol, profile.default_timeframe)
         qualifications.append(qualification)
         blockers.extend(f"{symbol}: {item}" for item in qualification["blockers"])
+    user = await db.get(User, user_id)
     controls = {
         "private_mode": settings.PRIVATE_MODE,
         "owner_configured": bool(settings.OWNER_EMAIL),
         "live_trading_armed": settings.LIVE_TRADING_ENABLED,
-        "emergency_stop_clear": not settings.EMERGENCY_STOP,
+        "emergency_stop_clear": not await emergency_stop_active(),
+        "owner_mfa_enabled": bool(user and user.two_factor_enabled),
+        "redis_safety_state_available": redis_client.is_healthy,
     }
     if not controls["private_mode"]:
         blockers.append("PRIVATE_MODE must be enabled")
@@ -82,6 +88,10 @@ async def private_launch_readiness(db: AsyncSession, user_id: int) -> dict:
         blockers.append("LIVE_TRADING_ENABLED is false")
     if not controls["emergency_stop_clear"]:
         blockers.append("EMERGENCY_STOP is active")
+    if not controls["owner_mfa_enabled"]:
+        blockers.append("Owner authenticator MFA is not enabled")
+    if not controls["redis_safety_state_available"]:
+        blockers.append("Redis safety state is unavailable")
     return {
         "ready_for_live": not blockers,
         "checked_at": datetime.now(timezone.utc).isoformat(),
