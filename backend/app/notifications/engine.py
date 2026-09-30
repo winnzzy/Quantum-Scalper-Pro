@@ -13,6 +13,7 @@ from app.core.config import settings
 from app.core.logging import logger
 from app.core.redis import redis_client
 from app.models.system import Notification
+from app.models.user import User
 
 
 class NotificationEngine:
@@ -34,7 +35,8 @@ class NotificationEngine:
     - Critical Errors
     """
 
-    def __init__(self):
+    def __init__(self, db=None):
+        self.db = db
         self.telegram_bot: Optional[Bot] = None
         self.telegram_chat_id: Optional[str] = None
         self._init_telegram()
@@ -94,15 +96,22 @@ class NotificationEngine:
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
 
-        await self._send_web_notification(user_id, "alert", notification)
+        delivered = {"web": await self._send_web_notification(user_id, "alert", notification)}
 
         if priority == "critical" and self.telegram_bot:
-            await self._send_telegram(
+            delivered["telegram"] = await self._send_telegram(
                 f"""🚨 *CRITICAL ALERT*
 
 *{title}*
 {message}"""
             )
+        if priority == "critical" and settings.SMTP_HOST and self.db:
+            user = await self.db.get(User, user_id)
+            if user:
+                delivered["email"] = await self._send_email(
+                    user.email, f"CRITICAL — {title}", message
+                )
+        return delivered
 
     def _build_trade_message(self, event_type: str, trade: Any) -> Dict[str, str]:
         """Build formatted messages for different channels."""
@@ -149,7 +158,7 @@ P&L: {pnl}"""
     async def _send_telegram(self, message: str):
         """Send Telegram message."""
         if not self.telegram_bot or not self.telegram_chat_id:
-            return
+            return False
 
         try:
             await self.telegram_bot.send_message(
@@ -157,13 +166,15 @@ P&L: {pnl}"""
                 text=message,
                 parse_mode=ParseMode.MARKDOWN
             )
+            return True
         except Exception as e:
             logger.error(f"Telegram send failed: {e}")
+            return False
 
     async def _send_email(self, to_email: str, subject: str, body: str):
         """Send email notification."""
         if not settings.SMTP_HOST or not settings.SMTP_USER:
-            return
+            return False
 
         try:
             msg = MIMEMultipart()
@@ -180,8 +191,10 @@ P&L: {pnl}"""
                 password=settings.SMTP_PASSWORD,
                 start_tls=settings.SMTP_TLS
             )
+            return True
         except Exception as e:
             logger.error(f"Email send failed: {e}")
+            return False
 
     async def _send_web_notification(self, user_id: int, type: str, data: Dict[str, Any]):
         """Send web notification via Redis pub/sub."""
@@ -192,13 +205,31 @@ P&L: {pnl}"""
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
 
+        if self.db:
+            stored = Notification(
+                user_id=user_id,
+                type=type,
+                title=str(data.get("title", type.replace("_", " ").title())),
+                message=str(data.get("body") or data.get("message") or data),
+                priority=str(data.get("priority", "normal")),
+                channels=["web"],
+                delivered={"database": True},
+            )
+            self.db.add(stored)
+            await self.db.commit()
+
+        if not redis_client.is_healthy:
+            logger.warning("Redis unavailable; notification persisted without realtime delivery")
+            return bool(self.db)
+
         await redis_client.publish(f"notifications:{user_id}", str(notification))
 
         # Also store in Redis list for retrieval
-        await redis_client.lpush(
+        queued = await redis_client.lpush(
             f"notifications_list:{user_id}",
             str(notification)
         )
+        return bool(self.db) or queued > 0
 
 
 # Global instance

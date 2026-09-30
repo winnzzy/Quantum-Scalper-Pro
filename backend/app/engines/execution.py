@@ -44,7 +44,7 @@ class ExecutionEngine:
         self.db = db
         self.user_id = user_id
         self.risk_engine = RiskManagementEngine(db)
-        self.notification_engine = NotificationEngine()
+        self.notification_engine = NotificationEngine(db)
 
     async def execute_signal(
         self,

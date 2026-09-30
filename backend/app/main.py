@@ -39,8 +39,21 @@ async def lifespan(app: FastAPI):
         from app.core.startup_recovery import StartupRecovery
         recovery = await StartupRecovery(AsyncSessionLocal, BrokerFactory).recover()
         if recovery["errors"]:
-            settings.EMERGENCY_STOP = True
+            from sqlalchemy import select
+            from app.core.operational_state import activate_emergency_stop
+            from app.models.user import User
+            from app.notifications.engine import NotificationEngine
+            await activate_emergency_stop()
             logger.critical("Startup recovery failed; emergency stop activated")
+            async with AsyncSessionLocal() as session:
+                owners = (await session.execute(select(User))).scalars().all()
+                for owner in owners:
+                    await NotificationEngine(session).send_alert(
+                        owner.id,
+                        "Startup recovery failed",
+                        "; ".join(recovery["errors"]),
+                        priority="critical",
+                    )
 
     logger.info("Application startup complete")
 

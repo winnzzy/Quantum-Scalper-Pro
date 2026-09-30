@@ -403,6 +403,15 @@ class RiskManagementEngine:
         self.db.add(event)
         await self.db.commit()
 
+        if event.severity == "critical":
+            from app.notifications.engine import NotificationEngine
+            await NotificationEngine(self.db).send_alert(
+                user_id,
+                f"Risk limit triggered: {event_type.value}",
+                message,
+                priority="critical",
+            )
+
         logger.warning(f"RISK EVENT: {event_type.value} - {message} (User: {user_id})")
 
     async def update_trade_result(self, user_id: int, pnl: Decimal):
