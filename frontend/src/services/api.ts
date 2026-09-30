@@ -46,14 +46,17 @@ api.interceptors.response.use(
 );
 
 export const authAPI = {
-  login: (email: string, password: string) => {
+  login: (email: string, password: string, otpCode?: string) => {
     const form = new URLSearchParams({ username: email, password });
+    if (otpCode) form.set('otp_code', otpCode);
     return api.post<AuthTokens>('/auth/login', form, {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     });
   },
   register: (data: RegisterRequest) => api.post<AuthUser>('/auth/register', data),
   me: () => api.get<AuthUser>('/auth/me'),
+  setupMfa: () => api.post<{ secret: string; provisioning_uri: string }>('/auth/mfa/setup'),
+  enableMfa: (code: string) => api.post<{ two_factor_enabled: boolean }>('/auth/mfa/enable', { code }),
 };
 
 export const tradingAPI = {

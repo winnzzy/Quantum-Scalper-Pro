@@ -133,10 +133,10 @@ class RedisClient:
             return await self._client.get(key)
         return await self._execute("get", _op)
 
-    async def set(self, key: str, value: str, expire: int = 3600) -> bool:
+    async def set(self, key: str, value: str, expire: int | None = 3600) -> bool:
         """Set value with optional expiration. Returns False if Redis unavailable."""
         async def _op():
-            return await self._client.set(key, value, ex=expire)
+            return await self._client.set(key, value, ex=expire) if expire else await self._client.set(key, value)
         result = await self._execute("set", _op)
         return result is not None and result
 

@@ -9,6 +9,7 @@ import { getApiErrorMessage } from '../utils/errors';
 const Login: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [otpCode, setOtpCode] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
@@ -19,7 +20,7 @@ const Login: React.FC = () => {
     setLoading(true);
 
     try {
-      const response = await authAPI.login(email, password);
+      const response = await authAPI.login(email, password, otpCode || undefined);
       const { access_token, refresh_token } = response.data;
 
       const userResponse = await authAPI.me();
@@ -81,6 +82,21 @@ const Login: React.FC = () => {
                   {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                 </button>
               </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Authenticator code <span className="text-gray-400">(if enabled)</span>
+              </label>
+              <input
+                type="text"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                value={otpCode}
+                onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                className="input"
+                placeholder="6-digit code"
+              />
             </div>
 
             <button

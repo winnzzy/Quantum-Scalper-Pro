@@ -86,6 +86,7 @@ export interface AuthUser {
   first_name?: string;
   last_name?: string;
   timezone?: string;
+  two_factor_enabled: boolean;
 }
 
 export interface RegisterRequest {

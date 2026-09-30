@@ -21,6 +21,8 @@ from app.strategies.registry import StrategyRegistry
 from app.backtesting.evidence import qualification_readiness
 from app.core.config import settings
 from app.services.launch_readiness import paper_burn_in_readiness
+from app.core.operational_state import emergency_stop_active
+from app.core.redis import redis_client
 
 router = APIRouter()
 
@@ -329,7 +331,9 @@ async def start_trading(
     if broker_type != "paper":
         if not settings.LIVE_TRADING_ENABLED:
             raise HTTPException(status_code=423, detail="Live trading is not armed")
-        if settings.EMERGENCY_STOP:
+        if not redis_client.is_healthy:
+            raise HTTPException(status_code=503, detail="Redis safety state is unavailable")
+        if await emergency_stop_active():
             raise HTTPException(status_code=423, detail="Emergency stop is active")
         paper_readiness = await paper_burn_in_readiness(db, current_user.id, config.symbols)
         if not paper_readiness["ready"]:

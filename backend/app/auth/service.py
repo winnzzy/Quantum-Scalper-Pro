@@ -15,6 +15,7 @@ from app.core.database import get_db
 from app.core.logging import logger
 from app.models.user import User, UserRole
 from app.models.system import AuditLog, AuditAction
+from app.auth.totp import decrypt_secret, verify_code
 
 security = HTTPBearer()
 
@@ -108,7 +109,9 @@ class AuthService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def authenticate_user(self, email: str, password: str) -> Optional[User]:
+    async def authenticate_user(
+        self, email: str, password: str, otp_code: str | None = None
+    ) -> Optional[User]:
         """Authenticate user with email and password."""
         result = await self.db.execute(select(User).where(User.email == email))
         user = result.scalar_one_or_none()
@@ -129,6 +132,18 @@ class AuthService:
 
             await self.db.commit()
             return None
+
+        if user.two_factor_enabled:
+            secret = decrypt_secret(user.two_factor_secret or "")
+            if not secret or not verify_code(secret, otp_code or ""):
+                user.login_attempts += 1
+                if user.login_attempts >= settings.MAX_LOGIN_ATTEMPTS:
+                    user.locked_until = datetime.now(timezone.utc) + timedelta(
+                        minutes=settings.LOCKOUT_DURATION_MINUTES
+                    )
+                await self.db.commit()
+                logger.warning(f"MFA verification failed for {email}")
+                return None
 
         # Reset login attempts on success
         user.login_attempts = 0

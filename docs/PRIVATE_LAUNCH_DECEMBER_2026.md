@@ -6,6 +6,7 @@ This build is intended for one owner and two markets: BTC/USDT and XAU/USD. A la
 
 - [ ] Production uses a unique 32+ character `SECRET_KEY`, strong database/Redis/Grafana passwords, and the exact `OWNER_EMAIL`.
 - [ ] The owner account is created once; a second `/auth/register` request returns `403`.
+- [ ] Authenticator MFA is enabled and both valid-code and rejected-code login drills pass.
 - [ ] Broker API credentials have trading permission only—no withdrawal permission—and IP allow-listing is enabled where supported.
 - [ ] `EMERGENCY_STOP=true` is tested in staging and `/api/v1/system/emergency-stop` stops active loops.
 - [ ] BTC/USDT and XAU/USD each have at least 30 elapsed paper-trading days and 100 closed paper trades.
@@ -29,5 +30,7 @@ This build is intended for one owner and two markets: BTC/USDT and XAU/USD. A la
 3. Set `LIVE_TRADING_ENABLED=true`, redeploy, and call launch readiness again.
 4. Verify broker balances and positions before starting a strategy.
 5. Keep the emergency-stop endpoint and infrastructure access immediately available.
+
+The emergency stop is durable in Redis. Clearing it requires the owner password and a current authenticator code through `POST /api/v1/system/emergency-stop/reset`; clearing the stop does not automatically restart an engine.
 
 No strategy can guarantee profit or eliminate losses. The purpose of these gates is to prevent avoidable operational loss and require out-of-sample evidence before capital is exposed.
