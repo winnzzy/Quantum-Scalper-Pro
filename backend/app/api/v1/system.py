@@ -14,6 +14,7 @@ from app.engines.trading import trading_engine_manager
 from app.core.operational_state import activate_emergency_stop, clear_emergency_stop
 from app.core.security import verify_password
 from app.auth.totp import decrypt_secret, verify_code
+from app.notifications.engine import NotificationEngine
 
 router = APIRouter()
 
@@ -79,6 +80,21 @@ async def launch_readiness(
 ):
     """Return every evidence and safety gate required before live launch."""
     return await private_launch_readiness(db, current_user.id)
+
+
+@router.post("/test-critical-alert")
+async def test_critical_alert(
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Send a harmless critical test through every configured owner channel."""
+    delivered = await NotificationEngine(db).send_alert(
+        current_user.id,
+        "Pre-launch alert test",
+        "This is a test of the Quantum Scalper Pro critical alert path.",
+        priority="critical",
+    )
+    return {"delivered": delivered}
 
 
 @router.post("/emergency-stop")

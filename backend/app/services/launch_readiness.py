@@ -79,6 +79,10 @@ async def private_launch_readiness(db: AsyncSession, user_id: int) -> dict:
         "emergency_stop_clear": not await emergency_stop_active(),
         "owner_mfa_enabled": bool(user and user.two_factor_enabled),
         "redis_safety_state_available": redis_client.is_healthy,
+        "critical_alert_channel_configured": bool(
+            (settings.TELEGRAM_BOT_TOKEN and settings.TELEGRAM_CHAT_ID)
+            or (settings.SMTP_HOST and settings.SMTP_USER and settings.SMTP_PASSWORD)
+        ),
     }
     if not controls["private_mode"]:
         blockers.append("PRIVATE_MODE must be enabled")
@@ -92,6 +96,8 @@ async def private_launch_readiness(db: AsyncSession, user_id: int) -> dict:
         blockers.append("Owner authenticator MFA is not enabled")
     if not controls["redis_safety_state_available"]:
         blockers.append("Redis safety state is unavailable")
+    if not controls["critical_alert_channel_configured"]:
+        blockers.append("No out-of-band critical alert channel is configured")
     return {
         "ready_for_live": not blockers,
         "checked_at": datetime.now(timezone.utc).isoformat(),

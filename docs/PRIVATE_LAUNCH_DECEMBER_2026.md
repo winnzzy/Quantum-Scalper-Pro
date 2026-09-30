@@ -15,6 +15,7 @@ This build is intended for one owner and two markets: BTC/USDT and XAU/USD. A la
 - [ ] Duplicate-signal, stale-quote, crossed-quote, excessive-spread, broker-timeout, and database-failure drills pass.
 - [ ] A database backup is created, `gzip -t` passes, and a restore into a clean staging database is verified.
 - [ ] Alerts reach the owner for engine stop, broker disconnect, daily-loss pause, recovery failure, and order rejection.
+- [ ] At least one out-of-band critical channel (Telegram or SMTP email) is configured and a test alert is received.
 
 ## Controlled rollout
 
@@ -30,6 +31,8 @@ This build is intended for one owner and two markets: BTC/USDT and XAU/USD. A la
 3. Set `LIVE_TRADING_ENABLED=true`, redeploy, and call launch readiness again.
 4. Verify broker balances and positions before starting a strategy.
 5. Keep the emergency-stop endpoint and infrastructure access immediately available.
+
+Run `./scripts/prelaunch-check.sh` before every production arming attempt. It exits non-zero unless exactly one owner exists and every live gate passes, making it suitable for a deployment pipeline or a manual go/no-go check.
 
 The emergency stop is durable in Redis. Clearing it requires the owner password and a current authenticator code through `POST /api/v1/system/emergency-stop/reset`; clearing the stop does not automatically restart an engine.
 
