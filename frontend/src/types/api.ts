@@ -145,6 +145,20 @@ export interface WalkForwardRequest {
   test_candles: number;
   step_candles?: number;
   min_train_trades: number;
+  holdout_candles: number;
+}
+
+export interface ValidationPreset extends WalkForwardRequest {}
+
+export interface MarketReadiness {
+  symbol: string;
+  timeframe: string;
+  ready_for_live: boolean;
+  blockers: string[];
+  dataset_sha256?: string;
+  source?: string;
+  qualified_at?: string;
+  strategy?: string;
 }
 
 export interface ValidationMetrics {
@@ -177,6 +191,8 @@ export interface WalkForwardResult {
   timeframe: string;
   method: string;
   candidate_count: number;
+  final_parameters: Record<string, number | string | boolean>;
+  parameter_stability_pct: number;
   windows: WalkForwardWindow[];
   out_of_sample_summary: {
     window_count: number;
@@ -190,6 +206,19 @@ export interface WalkForwardResult {
     profit_factor: number;
     worst_window_drawdown_pct: number;
     validation_status: 'promising' | 'not_robust' | 'insufficient_evidence';
+  };
+  untouched_holdout: ValidationMetrics & {
+    status?: string;
+    period?: { start: string; end: string; candles: number };
+  };
+  adverse_cost_holdout: ValidationMetrics & {
+    status?: string;
+    cost_multipliers?: { spread: number; commission: number; slippage: number };
+  };
+  promotion_gate: {
+    approved: boolean;
+    decision: 'paper_candidate' | 'blocked';
+    checks: Record<string, boolean>;
   };
   interpretation: string;
   selection_bias_warning: string;

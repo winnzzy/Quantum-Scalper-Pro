@@ -18,6 +18,7 @@ from app.core.markets import (
     validate_timeframe,
 )
 from app.strategies.registry import StrategyRegistry
+from app.backtesting.evidence import qualification_readiness
 
 router = APIRouter()
 
@@ -312,7 +313,8 @@ async def start_trading(
     if not config:
         raise HTTPException(status_code=404, detail="Strategy config not found")
 
-    broker_type = current_user.default_broker or "paper"
+    stored_broker = "paper" if current_user.paper_trading else (current_user.default_broker or "paper")
+    broker_type = stored_broker.value if hasattr(stored_broker, "value") else stored_broker
     try:
         for symbol in config.symbols:
             canonical = normalize_symbol(symbol)
@@ -321,6 +323,21 @@ async def start_trading(
                 validate_timeframe(canonical, timeframe)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    if broker_type != "paper":
+        evidence_blockers = []
+        for symbol in config.symbols:
+            timeframe = config.timeframes[0] if config.timeframes else "5m"
+            readiness = qualification_readiness(symbol, timeframe)
+            if not readiness["ready_for_live"]:
+                evidence_blockers.extend(
+                    f"{readiness['symbol']}: {blocker}" for blocker in readiness["blockers"]
+                )
+        if evidence_blockers:
+            raise HTTPException(
+                status_code=409,
+                detail="Live trading blocked — " + "; ".join(evidence_blockers),
+            )
 
     # Convert the persisted configuration into the runtime contract.
     config_dict = {

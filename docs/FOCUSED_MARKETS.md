@@ -48,3 +48,23 @@ single period, a small trade count, unrealistic fills, or omitted financing.
 No strategy can always win or print money. The system is designed to make
 unsupported markets impossible, losses bounded, assumptions explicit, and an
 edge falsifiable before meaningful capital is exposed.
+
+## Qualification command
+
+After importing the venue-matched 5-minute dataset, run the controlled preset:
+
+```bash
+cd backend
+python -m scripts.qualify_market --symbol BTC/USDT
+python -m scripts.qualify_market --symbol XAU/USD
+```
+
+The process reserves the last 6,000 candles as an untouched holdout. Earlier
+candles are used for rolling parameter selection and unseen test windows. The
+most consistently selected candidate is then run once on the holdout and once
+more with 1.5× spread, 1.5× commission, and 2× slippage.
+
+An approval requires all promotion checks to pass. The resulting qualification
+file contains the dataset SHA-256. Changing or replacing the CSV invalidates
+the approval automatically. Binance and MT5 live starts fail closed when the
+dataset, provenance manifest, qualification report, or approval is missing.

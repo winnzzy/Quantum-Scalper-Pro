@@ -31,6 +31,9 @@ const formatNumber = (value: number, digits = 2) =>
 
 const Validation: React.FC = () => {
   const { data: strategies } = useQuery('strategy-list', () => strategyAPI.list());
+  const { data: readiness, refetch: refetchReadiness } = useQuery(
+    'validation-readiness', () => backtestingAPI.getReadiness()
+  );
   const strategyList: string[] = strategies?.data?.strategies || [];
   const [result, setResult] = useState<WalkForwardResult | null>(null);
   const [candidateText, setCandidateText] = useState('[\n  {}\n]');
@@ -43,13 +46,28 @@ const Validation: React.FC = () => {
     test_candles: 250,
     step_candles: 250,
     min_train_trades: 5,
+    holdout_candles: 500,
   });
+
+  const loadPreset = async () => {
+    try {
+      const response = await backtestingAPI.getPreset(form.symbol);
+      const preset = response.data;
+      const { parameter_candidates, ...fields } = preset;
+      setForm(fields);
+      setCandidateText(JSON.stringify(parameter_candidates, null, 2));
+      toast.success(`Loaded ${form.symbol} research preset`);
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, 'Could not load preset'));
+    }
+  };
 
   const mutation = useMutation(
     (request: WalkForwardRequest) => backtestingAPI.runWalkForward(request),
     {
       onSuccess: (response) => {
         setResult(response.data);
+        refetchReadiness();
         toast.success('Walk-forward validation completed');
       },
       onError: (error: unknown) => {
@@ -97,6 +115,11 @@ const Validation: React.FC = () => {
       </div>
 
       <form onSubmit={submit} className="card space-y-5">
+        <div className="flex justify-end">
+          <button type="button" className="btn-secondary" onClick={loadPreset}>
+            Load asset research preset
+          </button>
+        </div>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <label className="text-sm font-medium text-gray-700">
             Strategy
@@ -136,13 +159,14 @@ const Validation: React.FC = () => {
           </label>
         </div>
 
-        <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-6">
           {[
             ['Initial balance', 'initial_balance', 1],
             ['Training candles', 'train_candles', 60],
             ['Test candles', 'test_candles', 60],
             ['Step candles', 'step_candles', 1],
             ['Min. train trades', 'min_train_trades', 1],
+            ['Untouched holdout', 'holdout_candles', 100],
           ].map(([label, key, minimum]) => (
             <label key={String(key)} className="text-sm font-medium text-gray-700">
               {label}
@@ -176,6 +200,27 @@ const Validation: React.FC = () => {
         </button>
       </form>
 
+      <div className="card">
+        <h2 className="text-lg font-semibold text-gray-900">Live evidence readiness</h2>
+        <div className="mt-4 grid gap-4 md:grid-cols-2">
+          {readiness?.data.markets.map((market) => (
+            <div key={market.symbol} className={`rounded-lg border p-4 ${market.ready_for_live ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'}`}>
+              <div className="flex items-center justify-between">
+                <strong>{market.symbol} · {market.timeframe}</strong>
+                <span className={market.ready_for_live ? 'text-green-700' : 'text-red-700'}>
+                  {market.ready_for_live ? 'Qualified' : 'Blocked'}
+                </span>
+              </div>
+              {!market.ready_for_live && (
+                <ul className="mt-2 list-disc pl-5 text-sm text-red-800">
+                  {market.blockers.map((blocker) => <li key={blocker}>{blocker}</li>)}
+                </ul>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+
       {summary && status && StatusIcon && (
         <>
           <div className="card flex flex-col justify-between gap-4 md:flex-row md:items-center">
@@ -202,6 +247,18 @@ const Validation: React.FC = () => {
                 <p className="mt-2 text-xl font-bold text-gray-900">{value}</p>
               </div>
             ))}
+          </div>
+
+          <div className={`card border ${result?.promotion_gate.approved ? 'border-green-300 bg-green-50' : 'border-red-300 bg-red-50'}`}>
+            <h2 className="text-lg font-semibold">Promotion gate: {result?.promotion_gate.approved ? 'Paper candidate' : 'Blocked'}</h2>
+            <p className="mt-1 text-sm text-gray-600">Selected-parameter stability: {formatNumber(result?.parameter_stability_pct ?? 0)}%</p>
+            <ul className="mt-3 grid gap-2 text-sm md:grid-cols-2">
+              {Object.entries(result?.promotion_gate.checks ?? {}).map(([check, passed]) => (
+                <li key={check} className={passed ? 'text-green-700' : 'text-red-700'}>
+                  {passed ? '✓' : '✕'} {check.replaceAll('_', ' ')}
+                </li>
+              ))}
+            </ul>
           </div>
 
           <div className="card">

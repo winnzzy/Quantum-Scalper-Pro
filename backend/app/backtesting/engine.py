@@ -21,6 +21,8 @@ from decimal import Decimal, ROUND_DOWN
 from typing import Dict, Any, Optional, List
 from pathlib import Path
 from dataclasses import dataclass, field
+from collections import Counter
+import json
 
 import pandas as pd
 import numpy as np
@@ -529,6 +531,7 @@ class BacktestingEngine:
         test_candles: int = 250,
         step_candles: Optional[int] = None,
         min_train_trades: int = 5,
+        holdout_candles: int = 0,
         risk_per_trade_pct: Optional[float] = None,
         max_drawdown_pct: Optional[float] = None,
         max_consecutive_losses: Optional[int] = None,
@@ -560,7 +563,9 @@ class BacktestingEngine:
             return {"error": "Timestamped historical data is required"}
 
         df = df.sort_values("timestamp").reset_index(drop=True)
-        required = train_candles + test_candles
+        if holdout_candles < 0:
+            return {"error": "holdout_candles cannot be negative"}
+        required = train_candles + test_candles + holdout_candles
         if len(df) < required:
             return {
                 "error": (
@@ -569,17 +574,19 @@ class BacktestingEngine:
                 )
             }
 
+        research_df = df.iloc[:-holdout_candles] if holdout_candles else df
+        holdout_df = df.iloc[-holdout_candles:] if holdout_candles else None
         windows = []
         test_start_index = train_candles
-        while test_start_index + test_candles <= len(df):
+        while test_start_index + test_candles <= len(research_df):
             train_start_index = test_start_index - train_candles
             train_end_index = test_start_index - 1
             test_end_index = test_start_index + test_candles - 1
 
-            train_start = df.iloc[train_start_index]["timestamp"]
-            train_end = df.iloc[train_end_index]["timestamp"]
-            test_start = df.iloc[test_start_index]["timestamp"]
-            test_end = df.iloc[test_end_index]["timestamp"]
+            train_start = research_df.iloc[train_start_index]["timestamp"]
+            train_end = research_df.iloc[train_end_index]["timestamp"]
+            test_start = research_df.iloc[test_start_index]["timestamp"]
+            test_end = research_df.iloc[test_end_index]["timestamp"]
 
             training_results = []
             for candidate in candidates:
@@ -678,6 +685,68 @@ class BacktestingEngine:
         else:
             status = "not_robust"
 
+        selected_counts = Counter(
+            json.dumps(window["selected_parameters"], sort_keys=True)
+            for window in windows
+        )
+        final_parameters = (
+            json.loads(selected_counts.most_common(1)[0][0]) if selected_counts else {}
+        )
+        parameter_stability = (
+            selected_counts.most_common(1)[0][1] / len(windows) * 100
+            if windows else 0.0
+        )
+        holdout_metrics: Dict[str, Any] = {"status": "not_run"}
+        stressed_metrics: Dict[str, Any] = {"status": "not_run"}
+        if holdout_df is not None and not holdout_df.empty and selected_counts:
+            holdout_start = holdout_df.iloc[0]["timestamp"]
+            holdout_end = holdout_df.iloc[-1]["timestamp"]
+            holdout_result = await self.run(
+                strategy_name=strategy_name, symbol=symbol, timeframe=timeframe,
+                start_date=holdout_start, end_date=holdout_end,
+                initial_balance=initial_balance, parameters=final_parameters,
+                risk_per_trade_pct=risk_per_trade_pct,
+                max_drawdown_pct=max_drawdown_pct,
+                max_consecutive_losses=max_consecutive_losses,
+                spread_pct=spread_pct, commission_rate=commission_rate,
+                slippage_rate=slippage_rate, allow_synthetic_data=False,
+            )
+            holdout_metrics = {
+                "period": {"start": str(holdout_start), "end": str(holdout_end), "candles": holdout_candles},
+                **self._compact_validation_metrics(holdout_result),
+            }
+            base_spread = float(spread_pct if spread_pct is not None else self.default_spread_pct)
+            base_commission = float(commission_rate if commission_rate is not None else self.commission_rate)
+            base_slippage = float(slippage_rate if slippage_rate is not None else self.slippage_rate)
+            stressed_result = await self.run(
+                strategy_name=strategy_name, symbol=symbol, timeframe=timeframe,
+                start_date=holdout_start, end_date=holdout_end,
+                initial_balance=initial_balance, parameters=final_parameters,
+                risk_per_trade_pct=risk_per_trade_pct,
+                max_drawdown_pct=max_drawdown_pct,
+                max_consecutive_losses=max_consecutive_losses,
+                spread_pct=base_spread * 1.5,
+                commission_rate=base_commission * 1.5,
+                slippage_rate=base_slippage * 2.0,
+                allow_synthetic_data=False,
+            )
+            stressed_metrics = {
+                "cost_multipliers": {"spread": 1.5, "commission": 1.5, "slippage": 2.0},
+                **self._compact_validation_metrics(stressed_result),
+            }
+
+        promotion_checks = {
+            "walk_forward_promising": status == "promising",
+            "parameter_stability_at_least_40_pct": parameter_stability >= 40,
+            "holdout_has_at_least_10_trades": holdout_metrics.get("total_trades", 0) >= 10,
+            "holdout_profitable": holdout_metrics.get("net_pnl", 0) > 0,
+            "holdout_profit_factor_at_least_1_1": holdout_metrics.get("profit_factor", 0) >= 1.1,
+            "holdout_drawdown_at_most_10_pct": holdout_metrics.get("max_drawdown_pct", 100) <= 10,
+            "stressed_holdout_profitable": stressed_metrics.get("net_pnl", 0) > 0,
+            "stressed_profit_factor_at_least_1": stressed_metrics.get("profit_factor", 0) >= 1.0,
+        }
+        promotion_approved = all(promotion_checks.values())
+
         return {
             "strategy": strategy_name,
             "symbol": symbol,
@@ -687,6 +756,8 @@ class BacktestingEngine:
             "test_candles": test_candles,
             "step_candles": step,
             "candidate_count": len(candidates),
+            "final_parameters": final_parameters,
+            "parameter_stability_pct": round(parameter_stability, 2),
             "windows": windows,
             "out_of_sample_summary": {
                 "window_count": len(valid_tests),
@@ -703,13 +774,21 @@ class BacktestingEngine:
                 "worst_window_drawdown_pct": round(max_drawdown, 2),
                 "validation_status": status,
             },
+            "untouched_holdout": holdout_metrics,
+            "adverse_cost_holdout": stressed_metrics,
+            "promotion_gate": {
+                "approved": promotion_approved,
+                "decision": "paper_candidate" if promotion_approved else "blocked",
+                "checks": promotion_checks,
+            },
             "interpretation": (
                 "Parameter selection uses training data only; every reported "
                 "summary metric comes from the subsequent unseen test window."
             ),
             "selection_bias_warning": (
                 "Testing many candidates increases overfitting risk. Confirm "
-                "promising results on a final untouched holdout dataset."
+                "The final chronological block is tested once as an untouched "
+                "holdout. Repeatedly rerunning after seeing it invalidates the gate."
             ),
         }
 
