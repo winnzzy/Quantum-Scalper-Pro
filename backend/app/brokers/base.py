@@ -36,6 +36,7 @@ class BrokerConfig:
     secret_key: Optional[str] = None
     passphrase: Optional[str] = None
     server: Optional[str] = None
+    path: Optional[str] = None
     login: Optional[int] = None
     password: Optional[str] = None
     testnet: bool = True

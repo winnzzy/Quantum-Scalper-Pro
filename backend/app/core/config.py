@@ -59,6 +59,7 @@ class Settings(BaseSettings):
     MT5_LOGIN: int | None = None
     MT5_PASSWORD: str | None = None
     MT5_PATH: str | None = None
+    MT5_XAU_SYMBOL: str = "XAUUSD"
 
     # Notifications
     TELEGRAM_BOT_TOKEN: str | None = None

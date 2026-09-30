@@ -3,12 +3,13 @@ from datetime import datetime
 from typing import Any, Dict, List, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.auth.service import get_current_active_user
 from app.backtesting.engine import backtest_engine
 from app.models.user import User
 from app.strategies.registry import StrategyRegistry
+from app.core.markets import get_market, normalize_symbol, validate_timeframe
 
 
 router = APIRouter()
@@ -37,10 +38,21 @@ class WalkForwardRequest(BaseModel):
     commission_rate: Optional[float] = Field(default=None, ge=0, le=0.05)
     slippage_rate: Optional[float] = Field(default=None, ge=0, le=0.05)
 
+    @field_validator("symbol")
+    @classmethod
+    def supported_symbol(cls, value: str) -> str:
+        return normalize_symbol(value)
+
     @model_validator(mode="after")
     def validate_period(self):
         if self.start_date and self.end_date and self.start_date >= self.end_date:
             raise ValueError("start_date must be earlier than end_date")
+        validate_timeframe(self.symbol, self.timeframe)
+        market = get_market(self.symbol)
+        if self.risk_per_trade_pct and self.risk_per_trade_pct > market.max_risk_percent:
+            raise ValueError(
+                f"risk_per_trade_pct cannot exceed {market.max_risk_percent}% for {market.symbol}"
+            )
         return self
 
 
@@ -53,7 +65,13 @@ async def run_walk_forward(
     if request.strategy_name not in StrategyRegistry.list_strategies():
         raise HTTPException(status_code=404, detail="Strategy not found")
 
-    result = await backtest_engine.run_walk_forward(**request.model_dump())
+    values = request.model_dump()
+    market = get_market(request.symbol)
+    values["risk_per_trade_pct"] = values["risk_per_trade_pct"] or market.default_risk_percent
+    values["spread_pct"] = values["spread_pct"] if values["spread_pct"] is not None else market.backtest_spread_pct
+    values["commission_rate"] = values["commission_rate"] if values["commission_rate"] is not None else market.backtest_commission_rate
+    values["slippage_rate"] = values["slippage_rate"] if values["slippage_rate"] is not None else market.backtest_slippage_rate
+    result = await backtest_engine.run_walk_forward(**values)
     if "error" in result:
         raise HTTPException(status_code=400, detail=result["error"])
     return result

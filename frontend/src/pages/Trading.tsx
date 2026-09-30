@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useQuery, useMutation } from 'react-query';
 import { tradingAPI, strategyAPI } from '../services/api';
 import { toast } from 'react-hot-toast';
@@ -11,10 +11,17 @@ const Trading: React.FC = () => {
   const [selectedBroker, setSelectedBroker] = useState('paper');
 
   const { data: marketData, refetch: refetchMarket } = useQuery(
-    ['market', selectedSymbol],
-    () => tradingAPI.getMarketData(selectedSymbol),
+    ['market', selectedSymbol, selectedBroker],
+    () => tradingAPI.getMarketData(selectedSymbol, selectedBroker),
     { refetchInterval: 5000 }
   );
+
+  useEffect(() => {
+    const compatible = selectedSymbol === 'BTC/USDT'
+      ? ['paper', 'binance_testnet', 'binance_futures']
+      : ['paper', 'mt5'];
+    if (!compatible.includes(selectedBroker)) setSelectedBroker('paper');
+  }, [selectedSymbol, selectedBroker]);
 
   const { data: strategies } = useQuery('strategies', () => strategyAPI.list());
   const { data: status, refetch: refetchStatus } = useQuery('tradingStatus', () => tradingAPI.getStatus());
@@ -117,10 +124,8 @@ const Trading: React.FC = () => {
                 onChange={(e) => setSelectedSymbol(e.target.value)}
                 className="input"
               >
-                <option>BTC/USDT</option>
-                <option>ETH/USDT</option>
-                <option>EUR/USD</option>
-                <option>GBP/USD</option>
+                <option value="BTC/USDT">BTC/USDT — Bitcoin</option>
+                <option value="XAU/USD">XAU/USD — Gold</option>
               </select>
             </div>
             <div>
@@ -143,9 +148,9 @@ const Trading: React.FC = () => {
                 className="input"
               >
                 <option value="paper">Paper Trading</option>
-                <option value="binance_testnet">Binance Testnet</option>
-                <option value="binance_futures">Binance Futures</option>
-                <option value="mt5">MetaTrader 5</option>
+                {selectedSymbol === 'BTC/USDT' && <option value="binance_testnet">Binance Testnet</option>}
+                {selectedSymbol === 'BTC/USDT' && <option value="binance_futures">Binance Futures</option>}
+                {selectedSymbol === 'XAU/USD' && <option value="mt5">MetaTrader 5</option>}
               </select>
             </div>
           </div>

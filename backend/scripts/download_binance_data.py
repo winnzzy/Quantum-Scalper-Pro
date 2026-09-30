@@ -5,6 +5,7 @@ from pathlib import Path
 
 from app.backtesting.binance_data import download_binance_monthly_klines
 from app.core.config import settings
+from app.core.markets import normalize_symbol
 
 
 def month(value: str) -> date:
@@ -18,8 +19,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Download verified Binance public monthly klines"
     )
-    parser.add_argument("--archive-symbol", required=True, help="e.g. BTCUSDT")
-    parser.add_argument("--storage-symbol", required=True, help="e.g. BTC/USDT")
+    parser.add_argument("--archive-symbol", default="BTCUSDT", choices=["BTCUSDT"])
+    parser.add_argument("--storage-symbol", default="BTC/USDT")
     parser.add_argument("--timeframe", required=True, help="e.g. 1m")
     parser.add_argument("--start", required=True, type=month, help="YYYY-MM")
     parser.add_argument("--end", required=True, type=month, help="YYYY-MM")
@@ -33,7 +34,7 @@ def main() -> None:
 
     data_path, manifest_path, report = download_binance_monthly_klines(
         archive_symbol=args.archive_symbol,
-        storage_symbol=args.storage_symbol,
+        storage_symbol=normalize_symbol(args.storage_symbol),
         timeframe=args.timeframe,
         start_month=args.start,
         end_month=args.end,

@@ -35,9 +35,9 @@ const Validation: React.FC = () => {
   const [result, setResult] = useState<WalkForwardResult | null>(null);
   const [candidateText, setCandidateText] = useState('[\n  {}\n]');
   const [form, setForm] = useState<Omit<WalkForwardRequest, 'parameter_candidates'>>({
-    strategy_name: 'ema_scalper',
+    strategy_name: 'dual_market_regime',
     symbol: 'BTC/USDT',
-    timeframe: '1m',
+    timeframe: '5m',
     initial_balance: 100000,
     train_candles: 1000,
     test_candles: 250,
@@ -112,12 +112,15 @@ const Validation: React.FC = () => {
           </label>
           <label className="text-sm font-medium text-gray-700">
             Symbol
-            <input
+            <select
               className="input mt-1"
               value={form.symbol}
-              onChange={(event) => setForm({ ...form, symbol: event.target.value.toUpperCase() })}
+              onChange={(event) => setForm({ ...form, symbol: event.target.value })}
               required
-            />
+            >
+              <option value="BTC/USDT">BTC/USDT — Bitcoin</option>
+              <option value="XAU/USD">XAU/USD — Gold</option>
+            </select>
           </label>
           <label className="text-sm font-medium text-gray-700">
             Timeframe

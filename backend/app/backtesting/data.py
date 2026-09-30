@@ -10,6 +10,8 @@ from typing import Optional
 
 import pandas as pd
 
+from app.core.markets import normalize_symbol, validate_timeframe
+
 
 REQUIRED_COLUMNS = ("timestamp", "open", "high", "low", "close", "volume")
 TIMEFRAME_MINUTES = {
@@ -138,6 +140,8 @@ def import_ohlcv_csv(
     max_gap_rate_pct: Optional[float] = None,
 ) -> tuple[Path, Path, DataQualityReport]:
     """Validate, store, and fingerprint a historical OHLCV CSV."""
+    symbol = normalize_symbol(symbol)
+    validate_timeframe(symbol, timeframe)
     raw = pd.read_csv(input_path)
     data, report = validate_ohlcv_frame(
         raw,

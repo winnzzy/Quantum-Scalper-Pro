@@ -52,7 +52,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title=settings.APP_NAME,
-    description="Production-grade automated trading platform for Forex and Cryptocurrency",
+    description="Risk-controlled Bitcoin and spot-gold trading and validation platform",
     version=settings.VERSION,
     docs_url="/docs" if settings.DEBUG else None,
     redoc_url="/redoc" if settings.DEBUG else None,

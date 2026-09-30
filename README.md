@@ -1,26 +1,35 @@
 # Quantum Scalper Pro
 
-**Production-Grade Automated Trading Platform**
+**Focused Bitcoin and Gold Trading Platform**
 
-Quantum Scalper Pro is a fully deployable commercial-grade automated trading platform supporting Forex and Cryptocurrency trading with advanced risk management, AI filtering, and professional analytics.
+Quantum Scalper Pro is a private-first automated trading and validation platform
+focused exclusively on `BTC/USDT` and `XAU/USD`. It combines venue-specific
+market data, regime-aware signals, conservative risk controls, walk-forward
+testing, paper execution, and live broker adapters. See
+[BTC and Gold Focus](docs/FOCUSED_MARKETS.md) before configuring a strategy.
 
 ## Features
 
 ### Trading
-- **Forex Trading** via MetaTrader 5
-- **Cryptocurrency Trading** via Binance (Spot, Futures, Testnet)
+- **Gold Trading** via MetaTrader 5 using a configurable broker symbol
+- **Bitcoin Trading** via Binance (Futures and Testnet)
 - **Paper Trading** for strategy testing
 - **Live Trading** with real capital
-- **Scalping Strategies** optimized for short-term trades
+- **Asset-specific strategy profiles** for Bitcoin and gold
 
-### Strategies (4 Built-in)
-1. **EMA Scalper** - EMA 9/21/50 crossover with ATR
-2. **VWAP Scalper** - VWAP pullback with RSI and volume
-3. **Breakout Scalper** - Support/resistance breakout with volume confirmation
-4. **Mean Reversion** - Bollinger Bands with RSI and Stochastic
+### Strategies
+1. **Dual Market Regime** - Separate BTC/gold trend, momentum, volatility, volume, and exit profiles
+2. **EMA Scalper** - EMA crossover research baseline
+3. **VWAP Scalper** - VWAP pullback research baseline
+4. **Breakout Scalper** - Support/resistance research baseline
+5. **Mean Reversion** - Bollinger-band research baseline
+
+The built-in parameters are hypotheses, not proven optimization. Use the
+walk-forward screen with venue-matched historical data and costs before paper
+trading. No result in this repository establishes a future win rate.
 
 ### Risk Management (Highest Priority)
-- Maximum risk per trade (0.25%, 0.5%, 1%, Custom)
+- Maximum risk per trade capped at 0.50% (0.25% default)
 - Daily/Weekly/Monthly loss limits
 - Maximum drawdown protection (auto-pause)
 - Consecutive loss protection
@@ -83,7 +92,7 @@ Quantum Scalper Pro is a fully deployable commercial-grade automated trading pla
 - Redis (caching, pub/sub)
 - WebSockets (real-time data)
 - CCXT (exchange integration)
-- MetaTrader5 (forex integration)
+- MetaTrader5 (broker-specific gold integration)
 - scikit-learn, XGBoost, LightGBM (AI)
 
 ### Frontend
@@ -148,7 +157,9 @@ Quantum Scalper Pro is a fully deployable commercial-grade automated trading pla
 | `BINANCE_API_KEY` | Binance API key | - |
 | `BINANCE_SECRET_KEY` | Binance secret key | - |
 | `BINANCE_TESTNET` | Use testnet | `true` |
-| `MT5_SERVER` | MT5 server path | - |
+| `MT5_SERVER` | MT5 broker server | - |
+| `MT5_PATH` | MT5 terminal executable path | - |
+| `MT5_XAU_SYMBOL` | Exact gold symbol exposed by the broker | `XAUUSD` |
 | `TELEGRAM_BOT_TOKEN` | Telegram bot token | - |
 | `SMTP_HOST` | SMTP server | - |
 
@@ -158,11 +169,13 @@ Quantum Scalper Pro is a fully deployable commercial-grade automated trading pla
 1. Create API keys at [Binance](https://www.binance.com/en/my/settings/api-management)
 2. Set `BINANCE_API_KEY` and `BINANCE_SECRET_KEY`
 3. Use `BINANCE_TESTNET=true` for testing
+4. This build accepts only `BTC/USDT` on Binance
 
 #### MetaTrader 5
 1. Install MT5 on your VPS
 2. Set `MT5_SERVER`, `MT5_LOGIN`, `MT5_PASSWORD`
-3. Ensure MT5 is running before connecting
+3. Set `MT5_PATH` and the exact broker symbol in `MT5_XAU_SYMBOL`
+4. Use an MT5 demo account and ensure the terminal is running before connecting
 
 ## API Documentation
 
@@ -175,6 +188,7 @@ The API is documented using OpenAPI/Swagger. Access it at `/docs` when running i
 | `/api/v1/auth/login` | POST | User login |
 | `/api/v1/auth/register` | POST | User registration |
 | `/api/v1/trading/trades` | GET | List trades |
+| `/api/v1/trading/markets` | GET | List the two supported markets and broker constraints |
 | `/api/v1/trading/start` | POST | Start trading engine |
 | `/api/v1/trading/stop` | POST | Stop trading engine |
 | `/api/v1/risk/profile` | GET/PUT | Risk profile |

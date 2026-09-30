@@ -8,6 +8,7 @@ from sqlalchemy import and_, select
 from app.brokers.factory import BrokerFactory
 from app.core.database import AsyncSessionLocal
 from app.core.logging import logger
+from app.core.markets import normalize_symbol, validate_market_broker, validate_timeframe
 from app.engines.execution import ExecutionEngine
 from app.models.trading import Trade, TradeStatus
 from app.strategies.registry import StrategyRegistry
@@ -57,10 +58,13 @@ class TradingEngine:
 
     async def _strategy_loop(self, config: Dict[str, Any]):
         strategy_type = config["strategy_type"]
-        symbols = config.get("symbols") or ["BTC/USDT"]
-        timeframes = config.get("timeframes") or [config.get("timeframe", "1m")]
+        symbols = [normalize_symbol(value) for value in (config.get("symbols") or ["BTC/USDT"])]
+        timeframes = config.get("timeframes") or [config.get("timeframe", "5m")]
         timeframe = timeframes[0]
         broker_type = config.get("broker_type", "paper")
+        for symbol in symbols:
+            validate_market_broker(symbol, broker_type)
+            validate_timeframe(symbol, timeframe)
         interval_seconds = max(5, int(config.get("interval_seconds", 60)))
 
         try:

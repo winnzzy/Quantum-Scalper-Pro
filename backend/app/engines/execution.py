@@ -120,6 +120,10 @@ class ExecutionEngine:
                 price=price,
                 stop_loss=stop_loss,
                 take_profit=take_profit,
+                risk_percent=(
+                    Decimal(str(strategy_config["risk_per_trade"]))
+                    if strategy_config.get("risk_per_trade") is not None else None
+                ),
                 broker_type=broker_type
             )
             result["risk_check"] = risk_result
