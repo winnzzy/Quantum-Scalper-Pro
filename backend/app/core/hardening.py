@@ -213,7 +213,10 @@ class IdempotencyGuard:
         """
         key = self.generate_key(user_id, signal_id, symbol)
 
-        # Try Redis first
+        # Try Redis first. An unavailable Redis client returns False rather than
+        # raising, so explicitly use the process-local safety net in that case.
+        if not self.redis.is_healthy:
+            return self._check_and_reserve_local(key, user_id, signal_id, symbol)
         try:
             result = await self.redis.set_nx(key, "pending", expire=self.ttl)
             if result:
@@ -226,19 +229,19 @@ class IdempotencyGuard:
                 return False, key
         except Exception:
             # Fallback to local cache if Redis unavailable
-            now = time.monotonic()
-            self._cleanup_local_cache(now)
+            return self._check_and_reserve_local(key, user_id, signal_id, symbol)
 
-            if key in self._local_cache:
-                if now - self._local_cache[key] < self.ttl:
-                    logger.warning(
-                        f"Duplicate order rejected (local cache): user={user_id} "
-                        f"signal={signal_id} symbol={symbol}"
-                    )
-                    return False, key
-
-            self._local_cache[key] = now
-            return True, key
+    def _check_and_reserve_local(self, key, user_id, signal_id, symbol):
+        now = time.monotonic()
+        self._cleanup_local_cache(now)
+        if key in self._local_cache and now - self._local_cache[key] < self.ttl:
+            logger.warning(
+                f"Duplicate order rejected (local cache): user={user_id} "
+                f"signal={signal_id} symbol={symbol}"
+            )
+            return False, key
+        self._local_cache[key] = now
+        return True, key
 
     async def mark_completed(self, idempotency_key: str, trade_id: int):
         """Mark idempotency key as completed with trade reference."""

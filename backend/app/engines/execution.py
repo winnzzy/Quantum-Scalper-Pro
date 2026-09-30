@@ -1,5 +1,7 @@
 """Execution Engine - Handles order execution across brokers."""
 import asyncio
+import hashlib
+import json
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Optional, Dict, Any
@@ -14,6 +16,15 @@ from app.risk.engine import RiskManagementEngine
 from app.ai.filter import ai_filter
 from app.notifications.engine import NotificationEngine
 from app.engines.news import news_filter
+from app.core.config import settings
+from app.core.hardening import IdempotencyGuard
+from app.core.markets import get_market, normalize_symbol, validate_market_broker
+from app.core.redis import redis_client
+
+
+order_idempotency_guard = IdempotencyGuard(
+    redis_client, ttl_seconds=settings.ORDER_IDEMPOTENCY_TTL_SECONDS
+)
 
 
 class ExecutionEngine:
@@ -66,14 +77,29 @@ class ExecutionEngine:
         price = signal.price
         stop_loss = signal.stop_loss
         take_profit = signal.take_profit
+        idempotency_key = None
 
         try:
+            symbol = normalize_symbol(symbol)
+            validate_market_broker(symbol, broker_type)
+            if broker_type != "paper" and not settings.LIVE_TRADING_ENABLED:
+                result["message"] = "Live trading is not armed (LIVE_TRADING_ENABLED=false)"
+                return result
+            if settings.EMERGENCY_STOP:
+                result["message"] = "Emergency stop is active"
+                return result
+
             # 1. Get broker
             broker = await BrokerFactory.get_broker(broker_type, self.user_id)
 
             # 2. Get market data for AI filter
             market_data = await broker.get_market_data(symbol)
             spread = market_data.ask - market_data.bid
+            quote_error = self._validate_market_data(market_data, broker_type)
+            if quote_error:
+                result["message"] = f"Market data rejected: {quote_error}"
+                logger.warning(f"Market data blocked order for {symbol}: {quote_error}")
+                return result
 
             # 3. AI filter (strategies may explicitly opt out, e.g. manual orders).
             if strategy_config.get("use_ai_filter", True):
@@ -133,6 +159,14 @@ class ExecutionEngine:
                 logger.warning(f"Trade blocked by risk: {symbol} {direction} - {risk_result['reason']}")
                 return result
 
+            signal_id = self._signal_fingerprint(signal, strategy_config)
+            allowed, idempotency_key = await order_idempotency_guard.check_and_reserve(
+                self.user_id, signal_id, symbol
+            )
+            if not allowed:
+                result["message"] = "Duplicate signal rejected"
+                return result
+
             # 6. Place order
             order_side = OrderSide.BUY if direction == "buy" else OrderSide.SELL
             order_type = OrderType.MARKET  # Default to market for scalping
@@ -148,6 +182,7 @@ class ExecutionEngine:
             )
 
             if not order_result.success:
+                await order_idempotency_guard.mark_failed(idempotency_key)
                 result["message"] = f"Order failed: {order_result.error_message}"
                 logger.error(f"Order execution failed: {order_result.error_message}")
                 return result
@@ -163,7 +198,7 @@ class ExecutionEngine:
                 quantity=risk_result["position_size"],
                 stop_loss=risk_result.get("adjusted_stop_loss") or stop_loss,
                 take_profit=take_profit,
-                risk_percent=Decimal(str(risk_result["risk_amount"] / price * 100)) if price > 0 else None,
+                risk_percent=Decimal(str(strategy_config.get("risk_per_trade"))) if strategy_config.get("risk_per_trade") is not None else None,
                 risk_amount=risk_result["risk_amount"],
                 strategy_name=strategy_config.get("strategy_type", "unknown"),
                 strategy_config=strategy_config,
@@ -178,6 +213,7 @@ class ExecutionEngine:
             self.db.add(trade)
             await self.db.commit()
             await self.db.refresh(trade)
+            await order_idempotency_guard.mark_completed(idempotency_key, trade.id)
 
             # 8. Send notification
             await self.notification_engine.send_trade_notification(
@@ -203,6 +239,42 @@ class ExecutionEngine:
             logger.error(f"Execution error: {e}")
             result["message"] = f"Execution error: {str(e)}"
             return result
+
+    @staticmethod
+    def _signal_fingerprint(signal: Any, strategy_config: Dict[str, Any]) -> str:
+        """Build a stable identity for one strategy/candle/direction decision."""
+        timestamp = getattr(signal, "timestamp", None)
+        payload = {
+            "strategy": strategy_config.get("strategy_type", "unknown"),
+            "symbol": normalize_symbol(signal.symbol),
+            "direction": signal.type.value,
+            "timeframe": getattr(signal, "timeframe", "1m"),
+            "timestamp": timestamp.isoformat() if timestamp else None,
+            "price": str(signal.price),
+        }
+        return hashlib.sha256(
+            json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()[:32]
+
+    @staticmethod
+    def _validate_market_data(market_data: Any, broker_type: str) -> Optional[str]:
+        if market_data.bid <= 0 or market_data.ask <= 0 or market_data.last <= 0:
+            return "non-positive quote"
+        if market_data.ask < market_data.bid:
+            return "crossed quote"
+        if broker_type != "paper":
+            if market_data.timestamp is None:
+                return "live quote has no timestamp"
+            quote_time = market_data.timestamp
+            if quote_time.tzinfo is None:
+                quote_time = quote_time.replace(tzinfo=timezone.utc)
+            age = (datetime.now(timezone.utc) - quote_time.astimezone(timezone.utc)).total_seconds()
+            if age < -5 or age > settings.MAX_MARKET_DATA_AGE_SECONDS:
+                return f"stale quote ({age:.1f}s old)"
+            spread_fraction = (market_data.ask - market_data.bid) / market_data.last
+            if spread_fraction > Decimal(str(get_market(market_data.symbol).max_live_spread_pct)):
+                return f"spread too wide ({float(spread_fraction) * 100:.4f}%)"
+        return None
 
     async def close_trade(self, trade_id: int, exit_price: Optional[Decimal] = None) -> Dict[str, Any]:
         """Close an open trade."""

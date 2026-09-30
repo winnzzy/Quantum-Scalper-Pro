@@ -1,38 +1,39 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
 echo "🚀 Quantum Scalper Pro - Deployment Script"
 
 # Check prerequisites
 command -v docker >/dev/null 2>&1 || { echo "Docker required but not installed. Aborting." >&2; exit 1; }
-command -v docker-compose >/dev/null 2>&1 || { echo "Docker Compose required but not installed. Aborting." >&2; exit 1; }
+docker compose version >/dev/null 2>&1 || { echo "Docker Compose plugin required. Aborting." >&2; exit 1; }
 
 # Create necessary directories
 mkdir -p data logs backups
 
 # Set permissions
-chmod 755 data logs backups
+chmod 700 data logs backups
 
 # Load environment variables
-if [ -f .env ]; then
-    export $(cat .env | grep -v '^#' | xargs)
-fi
+test -f .env || { echo ".env is required. Copy .env.example and replace every placeholder." >&2; exit 1; }
+chmod 600 .env
 
 # Pull latest images
-docker-compose pull
+docker compose config --quiet
+docker compose pull
 
 # Build and start services
-docker-compose up -d --build
+docker compose up -d --build
 
 # Run migrations
-docker-compose exec backend alembic upgrade head
+docker compose exec -T backend alembic upgrade head
 
 # Health check
 echo "⏳ Waiting for services to be healthy..."
 sleep 10
 
 # Check backend health
-if curl -f http://localhost:8000/api/v1/system/health >/dev/null 2>&1; then
+if docker compose exec -T backend python -c \
+    "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/system/health', timeout=5)"; then
     echo "✅ Backend is healthy"
 else
     echo "⚠️  Backend health check failed"

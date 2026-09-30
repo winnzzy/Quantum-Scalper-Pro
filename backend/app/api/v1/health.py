@@ -5,6 +5,8 @@ Exposes system health status for monitoring, load balancers, and alerting.
 Supports all 15 production hardening areas.
 """
 from fastapi import APIRouter, Depends
+from fastapi.responses import JSONResponse
+from sqlalchemy import text
 from datetime import datetime, timezone
 
 from app.core.redis import redis_client
@@ -15,6 +17,8 @@ from app.core.hardening import (
     system_health,
 )
 from app.core.logging import logger
+from app.auth.service import get_current_active_user
+from app.models.user import User
 
 router = APIRouter(prefix="/health", tags=["health"])
 
@@ -30,7 +34,7 @@ async def health_check():
 
 
 @router.get("/detailed")
-async def detailed_health():
+async def detailed_health(current_user: User = Depends(get_current_active_user)):
     """
     Comprehensive health check covering all 15 reliability areas.
     
@@ -47,7 +51,7 @@ async def detailed_health():
     # 1. Database check
     try:
         async with engine.connect() as conn:
-            await conn.execute("SELECT 1")
+            await conn.execute(text("SELECT 1"))
         checks["database"] = {"status": "healthy", "pool_pre_ping": True}
     except Exception as e:
         checks["database"] = {"status": "unhealthy", "error": str(e)}
@@ -102,13 +106,16 @@ async def readiness():
     db_ok = False
     try:
         async with engine.connect() as conn:
-            await conn.execute("SELECT 1")
+            await conn.execute(text("SELECT 1"))
         db_ok = True
     except Exception:
         pass
 
     if not db_ok:
-        return {"ready": False, "reason": "database_unavailable"}, 503
+        return JSONResponse(
+            status_code=503,
+            content={"ready": False, "reason": "database_unavailable"},
+        )
 
     return {"ready": True}
 

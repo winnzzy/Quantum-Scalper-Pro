@@ -17,6 +17,7 @@ class MarketProfile:
     backtest_spread_pct: float
     backtest_commission_rate: float
     backtest_slippage_rate: float
+    max_live_spread_pct: float
 
 
 MARKETS: Mapping[str, MarketProfile] = {
@@ -33,6 +34,7 @@ MARKETS: Mapping[str, MarketProfile] = {
         backtest_spread_pct=0.00020,
         backtest_commission_rate=0.00040,
         backtest_slippage_rate=0.00010,
+        max_live_spread_pct=0.0010,
     ),
     "XAU/USD": MarketProfile(
         symbol="XAU/USD",
@@ -47,6 +49,7 @@ MARKETS: Mapping[str, MarketProfile] = {
         backtest_spread_pct=0.00015,
         backtest_commission_rate=0.00000,
         backtest_slippage_rate=0.00010,
+        max_live_spread_pct=0.0015,
     ),
 }
 

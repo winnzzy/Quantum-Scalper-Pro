@@ -7,6 +7,9 @@ from app.auth.service import get_current_active_user
 from app.models.user import User
 from app.models.system import Notification
 from sqlalchemy import select, desc
+from app.services.launch_readiness import private_launch_readiness
+from app.core.config import settings
+from app.engines.trading import trading_engine_manager
 
 router = APIRouter()
 
@@ -58,3 +61,20 @@ async def mark_notification_read(
 async def health_check():
     """Public health check."""
     return {"status": "healthy", "service": "Quantum Scalper Pro", "version": "1.0.0"}
+
+
+@router.get("/launch-readiness")
+async def launch_readiness(
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return every evidence and safety gate required before live launch."""
+    return await private_launch_readiness(db, current_user.id)
+
+
+@router.post("/emergency-stop")
+async def emergency_stop(current_user: User = Depends(get_current_active_user)):
+    """Immediately block new orders and stop every in-process trading loop."""
+    settings.EMERGENCY_STOP = True
+    await trading_engine_manager.stop_all()
+    return {"emergency_stop": True, "message": "All trading engines stopped"}

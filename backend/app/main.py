@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from prometheus_client import make_asgi_app
 
 from app.core.config import settings
-from app.core.database import engine
+from app.core.database import engine, AsyncSessionLocal
 from app.core.logging import logger
 from app.core.redis import redis_client
 from app.api import api_router
@@ -22,9 +22,9 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info(f"Starting {settings.APP_NAME} v{settings.VERSION}")
 
-    # Ensure the customer-facing plan catalog exists.
-    from app.services.subscription_service import subscription_service
-    await subscription_service.seed_default_plans()
+    if settings.COMMERCIAL_FEATURES_ENABLED:
+        from app.services.subscription_service import subscription_service
+        await subscription_service.seed_default_plans()
 
     # Connect Redis
     await redis_client.connect()
@@ -32,6 +32,15 @@ async def lifespan(app: FastAPI):
     # Start news filter
     from app.engines.news import news_filter
     await news_filter.start()
+
+    # Never resume a real-money process without reconciling persisted trades
+    # against broker state after a restart.
+    if settings.LIVE_TRADING_ENABLED and settings.STARTUP_RECOVERY_REQUIRED:
+        from app.core.startup_recovery import StartupRecovery
+        recovery = await StartupRecovery(AsyncSessionLocal, BrokerFactory).recover()
+        if recovery["errors"]:
+            settings.EMERGENCY_STOP = True
+            logger.critical("Startup recovery failed; emergency stop activated")
 
     logger.info("Application startup complete")
 
@@ -75,8 +84,9 @@ app.add_middleware(
 )
 
 # Prometheus metrics
-metrics_app = make_asgi_app()
-app.mount("/metrics", metrics_app)
+if settings.METRICS_ENABLED:
+    metrics_app = make_asgi_app()
+    app.mount("/metrics", metrics_app)
 
 # Include API routes
 app.include_router(api_router)

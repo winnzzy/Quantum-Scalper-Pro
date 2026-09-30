@@ -15,7 +15,6 @@ const Strategies = lazy(() => import('./pages/Strategies'));
 const RiskCenter = lazy(() => import('./pages/RiskCenter'));
 const Settings = lazy(() => import('./pages/Settings'));
 const AdminDashboard = lazy(() => import('./pages/AdminDashboard'));
-const Billing = lazy(() => import('./pages/Billing'));
 const Validation = lazy(() => import('./pages/Validation'));
 
 const queryClient = new QueryClient({
@@ -46,7 +45,6 @@ function App() {
               <Route path="validation" element={<Validation />} />
               <Route path="risk" element={<RiskCenter />} />
               <Route path="settings" element={<Settings />} />
-              <Route path="billing" element={<Billing />} />
               <Route path="admin" element={<AdminDashboard />} />
             </Route>
           </Routes>
