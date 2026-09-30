@@ -6,6 +6,7 @@ from app.strategies.ema_scalper import EMAScalper
 from app.strategies.vwap_scalper import VWAPScalper
 from app.strategies.breakout_scalper import BreakoutScalper
 from app.strategies.mean_reversion import MeanReversionScalper
+from app.strategies.dual_market_regime import DualMarketRegimeStrategy
 
 
 class StrategyRegistry:
@@ -16,6 +17,7 @@ class StrategyRegistry:
         "vwap_scalper": VWAPScalper,
         "breakout_scalper": BreakoutScalper,
         "mean_reversion": MeanReversionScalper,
+        "dual_market_regime": DualMarketRegimeStrategy,
     }
 
     @classmethod

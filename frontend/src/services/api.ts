@@ -58,12 +58,26 @@ export const tradingAPI = {
   getTrades: (status?: string) => api.get('/trading/trades', { params: { status } }),
   getPositions: () => api.get('/trading/positions'),
   getAccount: (broker?: string) => api.get('/trading/account', { params: { broker_type: broker } }),
-  getMarketData: (symbol: string) => api.get(`/trading/market/${symbol}`),
+  getMarkets: () => api.get<{ markets: MarketProfile[] }>('/trading/markets'),
+  getMarketData: (symbol: string, broker = 'paper') =>
+    api.get(`/trading/market/${encodeURIComponent(symbol)}`, { params: { broker_type: broker } }),
   closeTrade: (id: number) => api.post(`/trading/trades/${id}/close`),
   startTrading: (configId: number) => api.post('/trading/start', { strategy_config_id: configId }),
   stopTrading: () => api.post('/trading/stop'),
   getStatus: () => api.get('/trading/status'),
 };
+
+export interface MarketProfile {
+  symbol: 'BTC/USDT' | 'XAU/USD';
+  name: string;
+  asset_class: string;
+  data_source: string;
+  allowed_brokers: string[];
+  allowed_timeframes: string[];
+  default_timeframe: string;
+  default_risk_percent: number;
+  max_risk_percent: number;
+}
 
 export const strategyAPI = {
   list: () => api.get('/strategies/list'),

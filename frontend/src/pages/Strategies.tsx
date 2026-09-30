@@ -12,10 +12,10 @@ const Strategies: React.FC = () => {
   const [showConfig, setShowConfig] = useState(false);
   const [configForm, setConfigForm] = useState<StrategyConfigRequest>({
     name: '',
-    strategy_type: 'ema_scalper',
+    strategy_type: 'dual_market_regime',
     symbols: ['BTC/USDT'],
-    timeframes: ['1m'],
-    risk_per_trade: 0.5,
+    timeframes: ['5m'],
+    risk_per_trade: 0.25,
     parameters: {},
   });
 
@@ -141,15 +141,38 @@ const Strategies: React.FC = () => {
                 </select>
               </div>
               <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Market</label>
+                <select
+                  className="input"
+                  value={configForm.symbols[0]}
+                  onChange={(e) => setConfigForm({ ...configForm, symbols: [e.target.value] })}
+                >
+                  <option value="BTC/USDT">BTC/USDT — Bitcoin</option>
+                  <option value="XAU/USD">XAU/USD — Gold</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Timeframe</label>
+                <select
+                  className="input"
+                  value={configForm.timeframes[0]}
+                  onChange={(e) => setConfigForm({ ...configForm, timeframes: [e.target.value] })}
+                >
+                  {['1m', '5m', '15m', '30m', '1h', '4h', '1d'].map((timeframe) => (
+                    <option key={timeframe}>{timeframe}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Risk Per Trade (%)</label>
                 <input
                   type="number"
                   value={configForm.risk_per_trade}
                   onChange={(e) => setConfigForm({ ...configForm, risk_per_trade: parseFloat(e.target.value) })}
                   className="input"
-                  step="0.1"
-                  min="0.1"
-                  max="5"
+                  step="0.05"
+                  min="0.05"
+                  max="0.5"
                 />
               </div>
             </div>

@@ -4,10 +4,11 @@ from app.strategies.ema_scalper import EMAScalper
 from app.strategies.vwap_scalper import VWAPScalper
 from app.strategies.breakout_scalper import BreakoutScalper
 from app.strategies.mean_reversion import MeanReversionScalper
+from app.strategies.dual_market_regime import DualMarketRegimeStrategy
 from app.strategies.registry import StrategyRegistry
 
 __all__ = [
     "BaseStrategy", "Signal", "SignalType", "StrategyResult",
     "EMAScalper", "VWAPScalper", "BreakoutScalper", "MeanReversionScalper",
-    "StrategyRegistry",
+    "DualMarketRegimeStrategy", "StrategyRegistry",
 ]

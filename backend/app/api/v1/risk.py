@@ -1,6 +1,6 @@
 """Risk Management API routes."""
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from decimal import Decimal
@@ -15,14 +15,14 @@ router = APIRouter()
 
 
 class RiskProfileUpdate(BaseModel):
-    risk_per_trade_percent: float | None = None
-    risk_per_trade_custom: float | None = None
-    daily_loss_limit_percent: float | None = None
-    weekly_loss_limit_percent: float | None = None
-    monthly_loss_limit_percent: float | None = None
-    max_drawdown_percent: float | None = None
-    max_consecutive_losses: int | None = None
-    max_open_trades: int | None = None
+    risk_per_trade_percent: float | None = Field(default=None, gt=0, le=0.5)
+    risk_per_trade_custom: float | None = Field(default=None, gt=0, le=0.5)
+    daily_loss_limit_percent: float | None = Field(default=None, gt=0, le=3)
+    weekly_loss_limit_percent: float | None = Field(default=None, gt=0, le=5)
+    monthly_loss_limit_percent: float | None = Field(default=None, gt=0, le=10)
+    max_drawdown_percent: float | None = Field(default=None, gt=0, le=15)
+    max_consecutive_losses: int | None = Field(default=None, ge=1, le=5)
+    max_open_trades: int | None = Field(default=None, ge=1, le=2)
     spread_protection_enabled: bool | None = None
     volatility_protection_enabled: bool | None = None
     weekend_protection_enabled: bool | None = None

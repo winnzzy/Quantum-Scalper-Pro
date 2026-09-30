@@ -1,6 +1,6 @@
 """Trading API routes."""
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, desc
 from datetime import datetime, timezone
@@ -13,6 +13,11 @@ from app.models.user import User
 from app.models.trading import Trade, TradeStatus, Position, Order, StrategyConfig
 from app.engines.trading import trading_engine_manager
 from app.brokers.factory import BrokerFactory
+from app.core.markets import (
+    get_market, normalize_symbol, public_market_catalog, validate_market_broker,
+    validate_timeframe,
+)
+from app.strategies.registry import StrategyRegistry
 
 router = APIRouter()
 
@@ -27,6 +32,18 @@ class TradeCreate(BaseModel):
     order_type: str = "market"
     broker_type: str = "paper"
 
+    @field_validator("symbol")
+    @classmethod
+    def supported_symbol(cls, value: str) -> str:
+        return normalize_symbol(value)
+
+    @model_validator(mode="after")
+    def compatible_broker(self):
+        validate_market_broker(self.symbol, self.broker_type)
+        if self.direction not in {"buy", "sell"}:
+            raise ValueError("direction must be 'buy' or 'sell'")
+        return self
+
 
 class TradingStartRequest(BaseModel):
     strategy_config_id: int
@@ -35,11 +52,37 @@ class TradingStartRequest(BaseModel):
 class StrategyConfigCreate(BaseModel):
     name: str
     strategy_type: str
-    parameters: dict = {}
-    symbols: list = []
-    timeframes: list = []
-    risk_per_trade: float | None = None
+    parameters: dict = Field(default_factory=dict)
+    symbols: list[str] = Field(default_factory=lambda: ["BTC/USDT"])
+    timeframes: list[str] = Field(default_factory=lambda: ["5m"])
+    risk_per_trade: float = Field(default=0.25, gt=0, le=0.5)
     is_active: bool = True
+
+    @field_validator("symbols")
+    @classmethod
+    def supported_symbols(cls, values: list[str]) -> list[str]:
+        if not values:
+            raise ValueError("At least one market is required")
+        return list(dict.fromkeys(normalize_symbol(value) for value in values))
+
+    @model_validator(mode="after")
+    def valid_configuration(self):
+        if self.strategy_type not in StrategyRegistry.list_strategies():
+            raise ValueError("Unknown strategy type")
+        if not self.timeframes:
+            raise ValueError("At least one timeframe is required")
+        for symbol in self.symbols:
+            for timeframe in self.timeframes:
+                validate_timeframe(symbol, timeframe)
+            if self.risk_per_trade > get_market(symbol).max_risk_percent:
+                raise ValueError(f"risk_per_trade exceeds the cap for {symbol}")
+        return self
+
+
+@router.get("/markets")
+async def get_supported_markets(current_user: User = Depends(get_current_active_user)):
+    """Return the only markets supported by this focused build."""
+    return {"markets": public_market_catalog()}
 
 
 @router.get("/trades")
@@ -170,13 +213,15 @@ async def get_account(
     }
 
 
-@router.get("/market/{symbol}")
+@router.get("/market/{symbol:path}")
 async def get_market_data(
     symbol: str,
     broker_type: str = "paper",
     current_user: User = Depends(get_current_active_user)
 ):
     """Get market data for symbol."""
+    symbol = normalize_symbol(symbol)
+    validate_market_broker(symbol, broker_type)
     broker = await BrokerFactory.get_broker(broker_type, current_user.id)
     data = await broker.get_market_data(symbol)
 
@@ -191,7 +236,7 @@ async def get_market_data(
     }
 
 
-@router.get("/ohlcv/{symbol}")
+@router.get("/ohlcv/{symbol:path}")
 async def get_ohlcv(
     symbol: str,
     timeframe: str = "1m",
@@ -200,6 +245,9 @@ async def get_ohlcv(
     current_user: User = Depends(get_current_active_user)
 ):
     """Get OHLCV data."""
+    symbol = normalize_symbol(symbol)
+    validate_market_broker(symbol, broker_type)
+    validate_timeframe(symbol, timeframe)
     broker = await BrokerFactory.get_broker(broker_type, current_user.id)
     data = await broker.get_ohlcv(symbol, timeframe, limit)
 
@@ -236,7 +284,7 @@ async def create_strategy_config(
         parameters=config.parameters,
         symbols=config.symbols,
         timeframes=config.timeframes,
-        risk_per_trade=Decimal(str(config.risk_per_trade)) if config.risk_per_trade else None,
+        risk_per_trade=Decimal(str(config.risk_per_trade)),
         is_active=config.is_active
     )
 
@@ -264,13 +312,23 @@ async def start_trading(
     if not config:
         raise HTTPException(status_code=404, detail="Strategy config not found")
 
+    broker_type = current_user.default_broker or "paper"
+    try:
+        for symbol in config.symbols:
+            canonical = normalize_symbol(symbol)
+            validate_market_broker(canonical, broker_type)
+            for timeframe in config.timeframes:
+                validate_timeframe(canonical, timeframe)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
     # Convert the persisted configuration into the runtime contract.
     config_dict = {
         "strategy_type": config.strategy_type,
         "symbols": config.symbols,
         "timeframes": config.timeframes,
         "parameters": config.parameters,
-        "broker_type": current_user.default_broker or "paper",
+        "broker_type": broker_type,
         "is_active": config.is_active,
         "risk_per_trade": float(config.risk_per_trade) if config.risk_per_trade else None,
         "use_ai_filter": config.use_ai_filter,

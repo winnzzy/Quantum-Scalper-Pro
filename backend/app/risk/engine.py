@@ -12,6 +12,7 @@ from app.models.risk import RiskProfile, RiskEvent, RiskEventType
 from app.models.trading import Trade, TradeStatus, TradeDirection
 from app.models.user import User
 from app.core.redis import redis_client
+from app.core.markets import get_market
 
 
 class RiskManagementEngine:
@@ -76,6 +77,15 @@ class RiskManagementEngine:
             result["reason"] = "Risk profile not found"
             return result
 
+        market = get_market(symbol)
+        requested_risk = risk_percent or risk_profile.risk_per_trade_custom or risk_profile.risk_per_trade_percent
+        if Decimal(str(requested_risk)) > Decimal(str(market.max_risk_percent)):
+            result["allowed"] = False
+            result["reason"] = (
+                f"Risk per trade cannot exceed {market.max_risk_percent}% for {market.symbol}"
+            )
+            return result
+
         # Check if trading is paused
         if risk_profile.trading_paused:
             result["allowed"] = False
@@ -121,7 +131,7 @@ class RiskManagementEngine:
             return result
 
         # 6. Weekend protection
-        weekend_check = self._check_weekend_protection(risk_profile)
+        weekend_check = self._check_weekend_protection(risk_profile, symbol)
         if not weekend_check["allowed"]:
             result["allowed"] = False
             result["reason"] = weekend_check["reason"]
@@ -269,21 +279,26 @@ class RiskManagementEngine:
 
         return {"allowed": True}
 
-    def _check_weekend_protection(self, profile: RiskProfile) -> Dict[str, Any]:
+    def _check_weekend_protection(
+        self, profile: RiskProfile, symbol: str = "XAU/USD", now: Optional[datetime] = None
+    ) -> Dict[str, Any]:
         """Check weekend trading protection."""
         if not profile.weekend_protection_enabled:
             return {"allowed": True}
 
-        now = datetime.now(timezone.utc)
+        if get_market(symbol).asset_class == "crypto":
+            return {"allowed": True}
+
+        now = now or datetime.now(timezone.utc)
         weekday = now.weekday()
         hour = now.hour
 
         # Friday after 22:00 UTC to Sunday 22:00 UTC
         if weekday == 4 and hour >= 22:  # Friday evening
             return {"allowed": False, "reason": "Weekend protection: Friday after 22:00 UTC"}
-        elif weekday in [5, 6]:  # Saturday, Sunday
+        elif weekday == 5:  # Saturday
             return {"allowed": False, "reason": "Weekend protection: Weekend trading disabled"}
-        elif weekday == 0 and hour < 22:  # Sunday before 22:00 UTC
+        elif weekday == 6 and hour < 22:  # Sunday before 22:00 UTC
             return {"allowed": False, "reason": "Weekend protection: Sunday before 22:00 UTC"}
 
         return {"allowed": True}

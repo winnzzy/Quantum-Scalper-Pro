@@ -1092,9 +1092,7 @@ class BacktestingEngine:
 
         n = 1000
         base_prices = {
-            "BTC/USDT": 65000, "ETH/USDT": 3500, "BNB/USDT": 600,
-            "SOL/USDT": 150, "XRP/USDT": 0.60, "ADA/USDT": 0.45,
-            "EUR/USD": 1.0850, "GBP/USD": 1.2650, "USD/JPY": 151.50,
+            "BTC/USDT": 65000, "XAU/USD": 2500,
         }
         base_price = base_prices.get(symbol, 100.0)
 

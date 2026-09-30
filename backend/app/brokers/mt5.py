@@ -14,6 +14,7 @@ from app.brokers.base import (
     PositionInfo, MarketData, OrderSide, OrderType, OrderStatus
 )
 from app.core.logging import logger
+from app.core.config import settings
 
 
 class MT5Broker(BaseBroker):
@@ -38,7 +39,7 @@ class MT5Broker(BaseBroker):
 
             def _init():
                 if not mt5.initialize(
-                    path=self.config.server,
+                    path=self.config.path,
                     login=self.config.login,
                     password=self.config.password,
                     server=self.config.server,
@@ -122,9 +123,10 @@ class MT5Broker(BaseBroker):
                 OrderType.STOP: mt5.ORDER_TYPE_BUY_STOP if side == OrderSide.BUY else mt5.ORDER_TYPE_SELL_STOP,
             }.get(order_type, mt5.ORDER_TYPE_BUY if side == OrderSide.BUY else mt5.ORDER_TYPE_SELL)
 
+            broker_symbol = self.format_symbol(symbol)
             request = {
                 "action": mt5.TRADE_ACTION_DEAL if order_type == OrderType.MARKET else mt5.TRADE_ACTION_PENDING,
-                "symbol": symbol,
+                "symbol": broker_symbol,
                 "volume": float(quantity),
                 "type": mt5_type,
                 "deviation": kwargs.get("deviation", 10),
@@ -223,7 +225,7 @@ class MT5Broker(BaseBroker):
             loop = asyncio.get_event_loop()
             def _get():
                 if symbol:
-                    return mt5.orders_get(symbol=symbol)
+                    return mt5.orders_get(symbol=self.format_symbol(symbol))
                 return mt5.orders_get()
             orders = await loop.run_in_executor(None, _get)
             return [self._parse_mt5_order(o) for o in (orders or [])]
@@ -239,7 +241,7 @@ class MT5Broker(BaseBroker):
             loop = asyncio.get_event_loop()
             def _get():
                 if symbol:
-                    return mt5.positions_get(symbol=symbol)
+                    return mt5.positions_get(symbol=self.format_symbol(symbol))
                 return mt5.positions_get()
             positions = await loop.run_in_executor(None, _get)
             return [self._parse_mt5_position(p) for p in (positions or [])]
@@ -269,7 +271,8 @@ class MT5Broker(BaseBroker):
             raise RuntimeError("MT5 not initialized")
 
         loop = asyncio.get_event_loop()
-        tick = await loop.run_in_executor(None, mt5.symbol_info_tick, symbol)
+        broker_symbol = self.format_symbol(symbol)
+        tick = await loop.run_in_executor(None, mt5.symbol_info_tick, broker_symbol)
 
         if tick is None:
             raise RuntimeError(f"Failed to get tick for {symbol}")
@@ -309,7 +312,7 @@ class MT5Broker(BaseBroker):
         try:
             loop = asyncio.get_event_loop()
             def _get():
-                return mt5.copy_rates_from_pos(symbol, mt5_tf, 0, limit)
+                return mt5.copy_rates_from_pos(self.format_symbol(symbol), mt5_tf, 0, limit)
             rates = await loop.run_in_executor(None, _get)
 
             if rates is None:
@@ -335,6 +338,13 @@ class MT5Broker(BaseBroker):
         """Get balance."""
         info = await self.get_account_info()
         return info.balance
+
+    def format_symbol(self, symbol: str) -> str:
+        """Map the canonical gold symbol to the exact broker-specific MT5 name."""
+        clean = symbol.upper().replace("-", "/").replace("_", "/")
+        if clean in {"XAU/USD", "XAUUSD", "GOLD"}:
+            return settings.MT5_XAU_SYMBOL
+        return symbol
 
     def _parse_mt5_order(self, order) -> OrderResult:
         """Parse MT5 order."""
